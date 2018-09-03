@@ -1,4 +1,4 @@
-name := "sbaif"
+name := "spaif"
 
 version := "0.1"
 
@@ -28,3 +28,9 @@ libraryDependencies += "org.json4s" %% "json4s-native" % "3.6.0"
 
 // https://mvnrepository.com/artifact/org.jsoup/jsoup
 libraryDependencies += "org.jsoup" % "jsoup" % "1.8.3"
+
+// https://mvnrepository.com/artifact/org.scalaj/scalaj-http
+libraryDependencies += "org.scalaj" %% "scalaj-http" % "2.4.1"
+
+// https://mvnrepository.com/artifact/org.scala-lang/scala-reflect
+libraryDependencies += "org.scala-lang" % "scala-reflect" % "2.11.12"

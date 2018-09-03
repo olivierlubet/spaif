@@ -1,4 +1,4 @@
-package net.lubet.sbaif
+package net.lubet.spaif
 
 import java.io.File
 
@@ -6,6 +6,8 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.SparkSession
 
 object Context {
+  val mock = false
+
   lazy val spark: SparkSession = {
     System.setSecurityManager(null)
 
