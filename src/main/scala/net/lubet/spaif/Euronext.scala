@@ -93,11 +93,12 @@ object Euronext {
     val sdf = new SimpleDateFormat("yyyy-MM-dd")
     //https://www.euronext.com/nyx_eu_listings/price_chart/download_historical?typefile=csv&layout=vertical&typedate=dmy&separator=point&mic=XPAR&isin=FR0010478248&name=ATARI&namefile=Price_Data_Historical&from=1535328000000&to=1535932800000&adjusted=1&base=0
     val url = new URL(s"https://www.euronext.com/nyx_eu_listings/price_chart/download_historical?typefile=csv&layout=vertical&typedate=dmy&separator=point&mic=XPAR&isin=${isin}&name=${URLEncoder.encode(name, "UTF-8")}&namefile=Price_Data_Historical&from=946681200000&to=1535932800000&adjusted=1&base=0")
+    println(url.toString)
     Browser.get(url)
   }
 
   def refreshStock(isin:String) = {
-    val file = new File(s"spark/s/$isin")
+    val file = new File(s"spark/s/${isin}.csv")
     val bw = new BufferedWriter(new FileWriter(file))
     bw.write(dlStock(isin))
     bw.close()
@@ -108,7 +109,7 @@ object Euronext {
     
     
     val ds = Context.spark.createDataset(
-      Source.fromFile(s"spark/s/${isin}").getLines.toList.drop(3)
+      Source.fromFile(s"spark/s/${isin}.csv").getLines.toList.drop(3)
       )
     Context.spark.read.
       option("header", value = true).
@@ -118,15 +119,18 @@ object Euronext {
   }
   
   def consolidate(nb_stock:Integer=2):Unit = {
-    val ds = Euronext.getList().orderBy(desc("Turnover")).select("ISIN").limit(100).flatMap{
+    val list = Euronext.getList().orderBy(desc("Turnover")).select("ISIN").limit(1000).repartition(20)
+    list.show()
+    val ds = list.flatMap{
       case Row(isin: String) =>
       try {
         println(s"Working for $isin")
         Euronext.refreshStock(isin)
-        Source.fromFile(s"spark/s/${isin}").getLines.toList.drop(4)
+        Source.fromFile(s"spark/s/${isin}.csv").getLines.toList.drop(4)
       } catch {
-        case _: Throwable =>
+        case e: Throwable =>
           println(s"Error for $isin")
+          println(e.toString)
           List.empty
       }
     }
@@ -160,6 +164,6 @@ object Euronext {
     //
     df_f.repartition(4).write.
     mode("overwrite").
-    parquet("/home/ec2-user/environment/s3spark/aif/stock_value")
+    parquet("spark/stock_value")
   }
 }
