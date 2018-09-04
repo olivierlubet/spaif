@@ -1,15 +1,23 @@
 package net.lubet.spaif
 
+import scala.io._
+
 import java.io
 import java.io.{BufferedWriter, File, FileWriter}
 import java.net.{URL, URLEncoder}
-
-import scalaj.http._
 import java.text.SimpleDateFormat
 import java.util.Date
 
-import org.apache.spark.sql.DataFrame
 import org.jsoup.nodes.{Document, Element}
+
+import org.apache.spark.sql._
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.functions._
+import org.apache.spark.sql.DataFrame
+
+import Context.spark.implicits._
+
+
 
 object Euronext {
   def dlList(): String = {
@@ -55,29 +63,103 @@ object Euronext {
     val today = new java.sql.Date(System.currentTimeMillis)
 
     if (refresh) refreshList
+    
+    val schema = StructType(Array(
+    StructField("Name", StringType, false),
+    StructField("ISIN", StringType, false),
+    StructField("Symbol", StringType, false),
+    StructField("Market", StringType, false),
+    StructField("Trading Currency", StringType, true),
+    StructField("Open", DoubleType, true),
+    StructField("High", DoubleType, true),
+    StructField("Low", DoubleType, true),
+    StructField("Last", DoubleType, true),
+    StructField("Last Date/Time", TimestampType, true),
+    StructField("Time Zone", StringType, true),
+    StructField("Volume", DoubleType, true),
+    StructField("Turnover", DoubleType, true)
+    ))
+    
     Context.spark.read.
-      option("header", value = true).
+      option("header", value = false).
       option("sep", ";").
-      option("dateFormat","dd-MM-yyyy").
-      option("timestampFormat","dd-MM-yyyy HH:mm").
+      option("timestampFormat","dd/MM/yyyy HH:mm").
+      schema(schema).
       csv("spark/EuronextList.csv")
   }
 
-  def dlStock(name:String,isin:String): String ={
+  def dlStock(isin:String): String ={
+    val name:String="No need"
     val sdf = new SimpleDateFormat("yyyy-MM-dd")
     //https://www.euronext.com/nyx_eu_listings/price_chart/download_historical?typefile=csv&layout=vertical&typedate=dmy&separator=point&mic=XPAR&isin=FR0010478248&name=ATARI&namefile=Price_Data_Historical&from=1535328000000&to=1535932800000&adjusted=1&base=0
     val url = new URL(s"https://www.euronext.com/nyx_eu_listings/price_chart/download_historical?typefile=csv&layout=vertical&typedate=dmy&separator=point&mic=XPAR&isin=${isin}&name=${URLEncoder.encode(name, "UTF-8")}&namefile=Price_Data_Historical&from=946681200000&to=1535932800000&adjusted=1&base=0")
     Browser.get(url)
   }
 
-  def refreshStock(name:String,isin:String) = {
+  def refreshStock(isin:String) = {
     val file = new File(s"spark/s/$isin")
     val bw = new BufferedWriter(new FileWriter(file))
-    bw.write(dlStock(name,isin))
+    bw.write(dlStock(isin))
     bw.close()
   }
 
-  def getStock(symbol:String)={
-
+  def getStock(isin:String, refresh:Boolean=false):DataFrame = {
+    if(refresh)  refreshStock(isin)
+    
+    
+    val ds = Context.spark.createDataset(
+      Source.fromFile(s"spark/s/${isin}").getLines.toList.drop(3)
+      )
+    Context.spark.read.
+      option("header", value = true).
+      option("sep", ",").
+      option("dateFormat","dd-MM-yyyy").
+      csv(ds)
+  }
+  
+  def consolidate(nb_stock:Integer=2):Unit = {
+    val ds = Euronext.getList().orderBy(desc("Turnover")).select("ISIN").limit(100).flatMap{
+      case Row(isin: String) =>
+      try {
+        println(s"Working for $isin")
+        Euronext.refreshStock(isin)
+        Source.fromFile(s"spark/s/${isin}").getLines.toList.drop(4)
+      } catch {
+        case _: Throwable =>
+          println(s"Error for $isin")
+          List.empty
+      }
+    }
+    
+    //"ISIN","MIC","Date","Open","High","Low","Close","Number of Shares","Number of Trades","Turnover","Currency"
+    val schema = StructType(Array(
+      StructField("ISIN", StringType, false),
+      StructField("MIC", StringType, false),
+      StructField("Date",StringType,false),// DateType, false),
+      StructField("Open", DoubleType,true),//DoubleType, true),
+      StructField("High", DoubleType, true),
+      StructField("Low", DoubleType, true),
+      StructField("Close", DoubleType, true),
+      StructField("Number_of_Shares", DoubleType, true),
+      StructField("Number_of_Trades", DoubleType, true),
+      StructField("Turnover", StringType, true),
+      StructField("Currency", StringType, true)
+    ))
+    
+    val df = Context.spark.
+      read.
+      option("sep", ",").
+      option("timestampFormat","dd/MM/yyyy").
+      schema(schema).
+      csv(ds)
+    
+    val df_f = df.
+      withColumn("Date", to_date($"Date", "dd/MM/yyyy")). // Plus tolérant
+      withColumn("Turnover", df("Turnover").cast("Double"))
+      
+    //
+    df_f.repartition(4).write.
+    mode("overwrite").
+    parquet("/home/ec2-user/environment/s3spark/aif/stock_value")
   }
 }

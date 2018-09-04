@@ -24,7 +24,7 @@ libraryDependencies += "org.scala-lang.modules" %% "scala-xml" % "1.1.0"
 
 
 // https://mvnrepository.com/artifact/org.json4s/json4s-native
-libraryDependencies += "org.json4s" %% "json4s-native" % "3.6.0"
+libraryDependencies += "org.json4s" %% "json4s-native" % "3.2.10"
 
 // https://mvnrepository.com/artifact/org.jsoup/jsoup
 libraryDependencies += "org.jsoup" % "jsoup" % "1.8.3"
