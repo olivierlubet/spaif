@@ -5,8 +5,7 @@ import java.io.File
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.SparkSession
 
-object Context {
-  val mock = false
+trait SparkSessionWrapper {
 
   lazy val spark: SparkSession = {
     //System.setSecurityManager(null)
@@ -20,9 +19,10 @@ object Context {
     SparkSession
       .builder
       .master("local[4]")
-      .appName("FIC")
+      .appName("AIF")
       .config("spark.sql.warehouse.dir", warehouseLocation)
       //.enableHiveSupport()
       .getOrCreate()
   }
+
 }

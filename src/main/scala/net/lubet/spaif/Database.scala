@@ -9,7 +9,7 @@ import Context.spark.implicits._
 object Database {
   lazy val stockValue: DataFrame = {
     Context.spark.read.parquet("spark/stock_value").
-      repartitionByRange($"ISIN").
+      repartition($"ISIN").
       withColumn("Day_Count", row_number().over(Window.partitionBy($"ISIN").orderBy($"Date"))).
       cache()
   }
