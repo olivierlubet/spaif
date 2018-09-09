@@ -1,7 +1,6 @@
 package net.lubet.spaif
 
 import scala.io._
-
 import java.io
 import java.io.{BufferedWriter, File, FileWriter}
 import java.net.{URL, URLEncoder}
@@ -9,13 +8,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 import org.jsoup.nodes.{Document, Element}
-
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.DataFrame
-
 import Context.spark.implicits._
+import org.apache.spark.sql.expressions.Window
 
 
 
@@ -149,21 +147,19 @@ object Euronext {
       StructField("Turnover", StringType, true),
       StructField("Currency", StringType, true)
     ))
-    
-    val df = Context.spark.
+
+    Context.spark.
       read.
       option("sep", ",").
       option("timestampFormat","dd/MM/yyyy").
       schema(schema).
-      csv(ds)
-    
-    val df_f = df.
+      csv(ds).
+      repartition($"ISIN").
       withColumn("Date", to_date($"Date", "dd/MM/yyyy")). // Plus tolérant
-      withColumn("Turnover", df("Turnover").cast("Double"))
-      
-    //
-    df_f.repartition(4).write.
-    mode("overwrite").
-    parquet("spark/stock_value")
+      withColumn("Turnover", $"Turnover".cast("Double")). // Plus tolérant
+      //withColumn("Day_Count", row_number().over(Window.partitionBy($"ISIN").orderBy($"Date"))).
+      write.mode("overwrite").saveAsTable("quotation")
+
+    //parquet("spark/stock_value")
   }
 }
