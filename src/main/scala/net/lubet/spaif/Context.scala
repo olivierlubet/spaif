@@ -9,7 +9,7 @@ object Context {
   val mock = false
 
   lazy val spark: SparkSession = {
-    //System.setSecurityManager(null)
+    System.setSecurityManager(null)
 
     //val warehouseLocation = "file:///Users/olivi/IdeaProjects/funimmocrawl/spark"
     val warehouseLocation = "file://" + new File("spark").
@@ -22,7 +22,7 @@ object Context {
       .master("local[4]")
       .appName("FIC")
       .config("spark.sql.warehouse.dir", warehouseLocation)
-      //.enableHiveSupport()
+      .enableHiveSupport()
       .getOrCreate()
   }
 }

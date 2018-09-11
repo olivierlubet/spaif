@@ -19,10 +19,11 @@ object Analyst {
 
   import Context.spark.implicits._
   import Context.spark._
+  import Context._
 
   def prepareData(): DataFrame = {
 
-    val df = Database.stockValue
+    val df = Database.quotation
     //Serie.ema(df,)
     // ACA :
     val dfp = df.filter($"ISIN" === "FR0000045072").repartition($"ISIN").cache()
@@ -123,6 +124,7 @@ object Analyst {
     val data_raw = df_withT.cache()
 
     println("Write")
+    data_raw.write.mode("overwrite").saveAsTable("data")
     data_raw.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("spark/stock_value.csv")
 
     val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
@@ -184,7 +186,7 @@ object Analyst {
           setHandleInvalid("skip")
         ,*/
        // new LinearSVC().setMaxIter(10).setRegParam(0.1).
-          new RandomForestClassifier().setNumTrees(50).
+          new RandomForestClassifier().//.setNumTrees(50).
         //new GBTClassifier().setFeatureSubsetStrategy("auto").
           setLabelCol("indexedLabel").
           setFeaturesCol("features")
@@ -207,6 +209,8 @@ object Analyst {
 
     predictions.groupBy("predictedLabel", "targetClass").agg(count("*")).orderBy($"predictedLabel").show
 
+
+    pl.fit( data_raw.na.drop).write.overwrite().save("spark/ml/RandomForestClassifier")
   }
 
   /*

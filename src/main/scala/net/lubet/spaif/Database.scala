@@ -8,14 +8,39 @@ import Context.spark._
 import Context.spark.implicits._
 
 object Database {
-  lazy val stockValue: DataFrame = {
-    //sql("select * from quotation").cache
+
+  def createView(): Unit = {
+    stock.createOrReplaceTempView("stock")
+    quotation.createOrReplaceTempView("quotation")
+    data.createOrReplaceTempView("data")
+  }
+
+  def stock: DataFrame = {
+    //Context.spark.table("stock").cache
+
+    Context.spark.read.parquet("spark/stock").
+      repartition($"ISIN").
+      cache()
+  }
+
+  def quotation: DataFrame = {
+    //Context.spark.table("quotation").cache
 
     Context.spark.read.parquet("spark/quotation").
       repartition($"ISIN").
-      //withColumn("Day_Count", row_number().over(Window.partitionBy($"ISIN").orderBy($"Date"))).
       cache()
+    //withColumn("Day_Count", row_number().over(Window.partitionBy($"ISIN").orderBy($"Date"))).
+  }
 
+  def data: DataFrame = {
+    //Context.spark.table("data").cache
+    Context.spark.read.parquet("spark/data").
+      repartition($"ISIN").
+      cache
+  }
+
+  def lastQuotation: DataFrame = {
+    Database.quotation.groupBy("ISIN").agg(max("Date").alias("last_quotation"))
   }
 }
 
