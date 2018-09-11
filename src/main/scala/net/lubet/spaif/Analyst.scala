@@ -23,16 +23,18 @@ object Analyst {
 
   def prepareData(): DataFrame = {
 
+    Context.spark.catalog.clearCache()
+
     val df = Database.quotation
     //Serie.ema(df,)
     // ACA :
-    val dfp = df.filter($"ISIN" === "FR0000045072").repartition($"ISIN").cache()
+    val dfp = df.repartition($"ISIN").cache()//.filter($"ISIN" === "FR0000045072").repartition($"ISIN").cache()
     //println(dfp.count)
     //dfp.show
 
     println("df_withEMA")
     val df_withEMA = List(
-      ("XL", 0.01),
+      ("XL", 0.015),
       ("L", 0.03),
       ("M", 0.1),
       ("S", 0.3),
@@ -85,7 +87,7 @@ object Analyst {
       Serie.performance(acc, "S", t._1, t._2)
     }
 
-    println("df_withEMA++")
+    /*println("df_withEMA++")
     val df_withEMA2 = List(
       "P-5",
       "P-15",
@@ -94,16 +96,22 @@ object Analyst {
       "S/L"
     ).foldLeft(df_withP) { (acc, t) =>
       Serie.ema(acc, t, "EMA-" + t, 0.65)
-    }.orderBy(asc("Date"))
+    }.orderBy(asc("Date"))*/
 
     println("df_withD")
     val df_withD = List(
+      "P-5",
+      "P-15",
+      "S/M",
+      "M/L",
+      "S/L"
+      /*
       "EMA-S/M",
       "EMA-M/L",
       "EMA-S/L",
       "EMA-P-5",
-      "EMA-P-15"
-    ).foldLeft(df_withEMA2) { (acc, t) =>
+      "EMA-P-15"*/
+    ).foldLeft(df_withP) { (acc, t) =>
       println("df_withD " + t)
       Serie.derivative(acc, t, "D" + t, -1)
     }

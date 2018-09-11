@@ -75,7 +75,7 @@ object Serie {
       {
         before.map(r => Row.fromSeq(r.toSeq :+ null)) ++
           (linesFrom zip linesTo).par.map {
-            case (f, t) => {
+            case (f:Row, t:Row) => {
               val newVal = if (f.get(indexFrom) == null || t.get(indexFrom) == null || f.getDouble(indexFrom) == 0d || t.getDouble(indexFrom) == 0d) {
                 0d
               } else {
