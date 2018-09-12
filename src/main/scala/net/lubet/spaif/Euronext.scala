@@ -197,7 +197,7 @@ object Euronext {
       val lq = Database.lastQuotation
       val add = load.join(lq, load("ISIN") === lq("ISIN"), "left").drop(lq("ISIN")).filter($"last_quotation".isNull || $"Date" > $"last_quotation").drop($"last_quotation")
       println(s"Adding ${add.count} rows")
-      add.write.mode(SaveMode.Append).saveAsTable("quotation")
+      add.repartition($"ISIN").write.mode(SaveMode.Append).saveAsTable("quotation")
     } else {
       println("Writing new Table quotation")
       load.write.mode(SaveMode.Overwrite).saveAsTable("quotation")
