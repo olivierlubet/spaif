@@ -43,6 +43,7 @@ object Analyst {
       Serie.ema(acc, "Open", t._1, t._2)
     }.orderBy(asc("Date"))
 
+df_withEMA.write.mode("overwrite").saveAsTable("df_withEMA")
 
     def classification(df: DataFrame): DataFrame = {
       val newSchema = StructType(df.schema.fields ++ Array(StructField("classEMA", StringType, false)))
@@ -66,6 +67,8 @@ object Analyst {
     //println(df_withEMA.count)
     //df_withEMA.show
 
+df_withC.write.mode("overwrite").saveAsTable("df_withC")
+
     println("df_withR")
     val df_withR = Serie.rate(Serie.rate(
       Serie.rate(df_withC, "M", "L", "M/L"),
@@ -73,6 +76,8 @@ object Analyst {
       "S", "L", "S/L")
     //println(df_withR.count)
     //df_withR.show
+
+df_withR.write.mode("overwrite").saveAsTable("df_withR")
 
     println("df_withP")
     val df_withP = List(
@@ -86,6 +91,8 @@ object Analyst {
       println("df_withP " + t._1)
       Serie.performance(acc, "S", t._1, t._2)
     }
+
+df_withP.write.mode("overwrite").saveAsTable("df_withP")
 
     /*println("df_withEMA++")
     val df_withEMA2 = List(
@@ -116,6 +123,8 @@ object Analyst {
       Serie.derivative(acc, t, "D" + t, -1)
     }
 
+df_withD.write.mode("overwrite").saveAsTable("df_withD")
+
     //println(df_withPPP.count)
     //df_withP.show
 
@@ -128,6 +137,8 @@ object Analyst {
     withColumn("binTargetClass",
         when($"targetInt" < 5, "Bof").
         otherwise("Great !!!"))
+
+df_withT.write.mode("overwrite").saveAsTable("df_withT")
 
     val data_raw = df_withT.cache()
 
