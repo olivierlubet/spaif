@@ -14,6 +14,7 @@ import org.apache.spark.sql.functions._
 
 import org.apache.hadoop.fs._
 
+// java -Xms8G -Xmx8G -XX:ReservedCodeCacheSize=128m -XX:MaxMetaspaceSize=256m -jar /usr/share/sbt/bin/sbt-launch.jar console
 
 object Analyst {
 
@@ -21,141 +22,15 @@ object Analyst {
   import Context.spark._
   import Context._
 
-  def prepareData(): DataFrame = {
-
-    Context.spark.catalog.clearCache()
-
-    val df = Database.quotation
-    //Serie.ema(df,)
-    // ACA :
-    val dfp = df.repartition($"ISIN").cache()//.filter($"ISIN" === "FR0000045072").repartition($"ISIN").cache()
-    //println(dfp.count)
-    //dfp.show
-
-    println("df_withEMA")
-    val df_withEMA = List(
-      ("XL", 0.015),
-      ("L", 0.03),
-      ("M", 0.1),
-      ("S", 0.3),
-      ("XS", 0.65)
-    ).foldLeft(dfp) { (acc, t) =>
-      Serie.ema(acc, "Open", t._1, t._2)
-    }.orderBy(asc("Date"))
-
-df_withEMA.write.mode("overwrite").saveAsTable("df_withEMA")
-
-    def classification(df: DataFrame): DataFrame = {
-      val newSchema = StructType(df.schema.fields ++ Array(StructField("classEMA", StringType, false)))
-      val indexS = df.head().fieldIndex("S")
-      val indexM = df.head().fieldIndex("M")
-      val indexL = df.head().fieldIndex("L")
-
-      Context.spark.createDataFrame(df.rdd.map { r: Row =>
-        val s = r.getDouble(indexS)
-        val m = r.getDouble(indexM)
-        val l = r.getDouble(indexL)
-
-        val newVal = if (s > m && m > l) "SML" else if (s > l && l > m) "SLM" else if (m > s && s > l) "MSL" else if (m > l && l > s) "MLS" else if (l > s && s > m) "LSM" else if (l > m && m > s) "LMS" else "==="
-
-        Row.fromSeq(r.toSeq :+ newVal)
-      }, newSchema)
-    }
-
-    println("df_withC")
-    val df_withC = classification(df_withEMA)
-    //println(df_withEMA.count)
-    //df_withEMA.show
-
-df_withC.write.mode("overwrite").saveAsTable("df_withC")
-
-    println("df_withR")
-    val df_withR = Serie.rate(Serie.rate(
-      Serie.rate(df_withC, "M", "L", "M/L"),
-      "S", "M", "S/M"), //.orderBy(asc("Date")
-      "S", "L", "S/L")
-    //println(df_withR.count)
-    //df_withR.show
-
-df_withR.write.mode("overwrite").saveAsTable("df_withR")
-
-    println("df_withP")
-    val df_withP = List(
-      ("P-1", -1),
-      ("P-5", -5),
-      ("P-15", -15),
-      ("P-30", -30),
-      ("P+5", 5),
-      ("P+15", 15)
-    ).foldLeft(df_withR) { (acc, t) =>
-      println("df_withP " + t._1)
-      Serie.performance(acc, "S", t._1, t._2)
-    }
-
-df_withP.write.mode("overwrite").saveAsTable("df_withP")
-
-    /*println("df_withEMA++")
-    val df_withEMA2 = List(
-      "P-5",
-      "P-15",
-      "S/M",
-      "M/L",
-      "S/L"
-    ).foldLeft(df_withP) { (acc, t) =>
-      Serie.ema(acc, t, "EMA-" + t, 0.65)
-    }.orderBy(asc("Date"))*/
-
-    println("df_withD")
-    val df_withD = List(
-      "P-5",
-      "P-15",
-      "S/M",
-      "M/L",
-      "S/L"
-      /*
-      "EMA-S/M",
-      "EMA-M/L",
-      "EMA-S/L",
-      "EMA-P-5",
-      "EMA-P-15"*/
-    ).foldLeft(df_withP) { (acc, t) =>
-      println("df_withD " + t)
-      Serie.derivative(acc, t, "D" + t, -1)
-    }
-
-df_withD.write.mode("overwrite").saveAsTable("df_withD")
-
-    //println(df_withPPP.count)
-    //df_withP.show
-
-    val df_withT = df_withD.withColumn("targetInt", ($"P+5" * 100).cast("int")).
-      withColumn("targetClass",
-        when($"targetInt" < -1, "Negative").
-          when($"targetInt" < -2, "Neutral").
-          when($"targetInt" < 5, "Positive").
-          otherwise("Great !!!")).
-    withColumn("binTargetClass",
-        when($"targetInt" < 5, "Bof").
-        otherwise("Great !!!"))
-
-df_withT.write.mode("overwrite").saveAsTable("df_withT")
-
-    val data_raw = df_withT.cache()
-
-    println("Write")
-    data_raw.write.mode("overwrite").saveAsTable("data")
-    data_raw.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("spark/stock_value.csv")
-
-    val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
-    val filePath = fs.globStatus(new Path("spark/stock_value.csv/part*"))(0).getPath()
-    fs.rename(filePath, new Path("data.csv"))
-
-    data_raw
+  def machinePrediction():Unit={
+    val model = PipelineModel.load("spark/ml/RandomForestClassifier")
   }
 
-  def machineLearning(data_raw: DataFrame): Unit = {
+  def machineLearning(): Unit = {
 
-//val data_raw = sql("select * from data").cache()
+    val data_raw = sql("""
+    select * from data where isin in ("FR0000045072","FR0000130809")
+    """).cache()
 
     val Array(trainingData, testData) = data_raw.na.drop.randomSplit(Array(0.8, 0.2))
 

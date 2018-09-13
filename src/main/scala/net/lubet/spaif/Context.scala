@@ -23,6 +23,7 @@ object Context {
       .appName("FIC")
       .config("spark.sql.warehouse.dir", warehouseLocation)
       .config("hive.exec.dynamic.partition.mode","nonstrict")
+      .config("spark.ui.port","8081")
       .enableHiveSupport()
       .getOrCreate()
   }
