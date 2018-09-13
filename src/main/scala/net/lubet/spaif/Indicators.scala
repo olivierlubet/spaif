@@ -32,6 +32,12 @@ object Indicators {
       """
         |ALTER TABLE indicator DROP PARTITION (isin="__HIVE_DEFAULT_PARTITION__")
       """.stripMargin)
+      
+    sql(
+      """
+        |ALTER TABLE indicator DROP PARTITION (type = "Class")
+      """.stripMargin)
+      
   }
 
   def prepare = {
@@ -54,6 +60,9 @@ object Indicators {
     add(performance("S", -15))
     add(performance("S", -30))
 
+    add(derivative("P-S-5",-1))
+    add(derivative("P-S-15",-1))
+    add(derivative("P-S-30",-1))
     add(derivative("S/M",-1))
     add(derivative("S/L",-1))
     add(derivative("M/L",-1))
@@ -64,8 +73,45 @@ object Indicators {
     add(diff("P-S-5","P-S-15"))
     add(diff("P-S-15","P-S-30"))
 
+    add(classification)
+    add(classificationBin)
 
-    pivot().show
+    val data =     pivot().cache()
+    data.write.mode(SaveMode.Overwrite).saveAsTable("data")
+    data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("spark/stock_value.csv")
+    
+    val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
+    val filePath = fs.globStatus(new Path("spark/stock_value.csv/part*"))(0).getPath()
+    fs.rename(filePath, new Path("data.csv"))
+
+  }
+
+  def classification():DataFrame={
+    sql("""
+    |select isin,date,"Class" type,
+    |case 
+    | when value>0.05 then 5.0
+    | when value>0.03 then 3.0
+    | when value>0.01 then 1.0
+    | else -1.0
+    |end value
+    |--, value as test
+    |from indicator
+    | where type="P-S+5"
+    """.stripMargin)
+  }
+  
+  def classificationBin():DataFrame={
+    sql("""
+    |select isin,date,"ClassBin" type,
+    |case 
+    | when value>0.05 then 5.0
+    | else -1.0
+    |end value
+    |--, value as test
+    |from indicator
+    | where type="P-S+5"
+    """.stripMargin)
   }
 
   /**
@@ -112,7 +158,7 @@ object Indicators {
     //pivot(diminuende, diminutor).createOrReplaceTempView("tmp_pivot")
     sql(
       s"""
-         |select i1.isin,i1.date,"($diminuende)-($diminutor)" as type, i1.value-i2.value as value
+         |select i1.isin,i1.date,"$diminuende-$diminutor" as type, i1.value-i2.value as value
          |from indicator i1
          |join indicator i2 on i1.isin=i2.isin and i1.date=i2.date
          |where i1.type="$diminuende" and i2.type="$diminutor"
@@ -158,7 +204,7 @@ object Indicators {
     sql(
       """
         |select isin,type,count(1) from indicator group by isin,type order by isin,type
-      """.stripMargin).show
+      """.stripMargin).show(100)
   }
 
   def add(df: DataFrame) = {
@@ -169,16 +215,16 @@ object Indicators {
 
       val ref = sql(s"""select isin, max(date) date  from indicator where type="$indicatorType" group by isin""")
       val adding = df.join(ref, ref("isin") === df("isin"), "left").filter(df("date") > ref("date") || ref("date").isNull).select(df("isin"),df("date"),df("value"),df("type"))
-      println(s"Adding ${adding.count} rows")
+      println(s"Adding ${adding.count} rows for $indicatorType")
       adding.write.mode(SaveMode.Append).partitionBy("isin", "type").saveAsTable("indicator")
     }
   }
 
-  lazy val closeIndic = sql(
+  def closeIndic = sql(
     """
       |select q.isin,q.date,"Close" type, q.Open Value
       |from quotation q
-      |where q.isin in ("FR0000045072","FR0000130809")
+      |--where q.isin in ("FR0000045072","FR0000130809")
       |--and q.date<"2010-01-01" -- for test
     """.stripMargin
   )

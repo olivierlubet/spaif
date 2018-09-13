@@ -10,6 +10,6 @@ object App extends App {
   //val df = df1.unionAll(df2)
   //println("count:" + df.count())
   //df.show()
-  Euronext.consolidate(100)
+  Euronext.consolidate(1000)
   Context.spark.close
 }

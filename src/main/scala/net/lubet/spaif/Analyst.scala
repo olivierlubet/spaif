@@ -155,10 +155,12 @@ df_withT.write.mode("overwrite").saveAsTable("df_withT")
 
   def machineLearning(data_raw: DataFrame): Unit = {
 
+//val data_raw = sql("select * from data").cache()
+
     val Array(trainingData, testData) = data_raw.na.drop.randomSplit(Array(0.8, 0.2))
 
     val labelIndexer = new StringIndexer().
-      setInputCol("binTargetClass").
+      setInputCol("Class").
       setOutputCol("indexedLabel").
       fit(data_raw)
 
@@ -171,31 +173,45 @@ df_withT.write.mode("overwrite").saveAsTable("df_withT")
           setInputCol("classEMA").
           setOutputCol("classEMA_i").
           setHandleInvalid("skip")
-        ,
-        /*new StringIndexer().
-          setInputCol("ISIN").
-          setOutputCol("ISIN_i").
+        ,*/
+        new StringIndexer().
+          setInputCol("isin").
+          setOutputCol("isin_i").
           setHandleInvalid("skip")
-        ,*/
+        ,
         new OneHotEncoderEstimator().
-          setInputCols(Array("classEMA_i")). //, "ISIN_i")).
-          setOutputCols(Array("classEMA_v")) //, "ISIN_v"))
-        ,*/
+          setInputCols(Array("isin_i")). //, "ISIN_i")).
+          setOutputCols(Array("isin_v")) //, "ISIN_v"))
+        ,
         new VectorAssembler().
-          setInputCols(Array(//"classEMA_v", // "ISIN_v",
-            //"Open", "Close", "High","Low","Number_of_Shares","Number_of_Trades","Turnover",
-            //"L", "M", "S",
-            "EMA-S/L", "EMA-S/M", "EMA-M/L",
-            "EMA-P-5", "EMA-P-15",
-            "DEMA-S/M", "DEMA-M/L", "DEMA-S/L", "DEMA-P-5", "DEMA-P-15",
-            "P-1", "P-5", "P-15", "P-30"
-            //"M/L", "S/M", "S/L",
+          setInputCols(Array(
+          "isin_v",
+          "D-L/XL-1",
+          "D-M/L-1",
+          "D-P-S-15-1",
+          "D-P-S-30-1",
+          "D-P-S-5-1",
+          "D-S/L-1",
+          "D-S/M-1",
+          "D-XS/S-1",
+          "L/XL",
+          "M/L",
+          "P-S-1",
+          "P-S-1-P-S-5",
+          "P-S-15",
+          "P-S-15-P-S-30",
+          "P-S-30",
+          "P-S-5",
+          "P-S-5-P-S-15",
+          "S/L",
+          "S/M",
+          "XS/S"
           )).
           setOutputCol("features")
         ,
-        /*new MinMaxScaler() //StandardScaler()
-          setInputCol("features")
-          setOutputCol("scaledFeatures")
+        new MinMaxScaler(). //StandardScaler()
+          setInputCol("features").
+          setOutputCol("scaledFeatures").
           setMin(0)
         ,
         new VectorIndexer().
@@ -203,21 +219,22 @@ df_withT.write.mode("overwrite").saveAsTable("df_withT")
           setOutputCol("indexedFeatures").
           setMaxCategories(50).
           setHandleInvalid("skip")
-        ,*/
-       // new LinearSVC().setMaxIter(10).setRegParam(0.1).
-          new RandomForestClassifier().//.setNumTrees(50).
-        //new GBTClassifier().setFeatureSubsetStrategy("auto").
-          setLabelCol("indexedLabel").
-          setFeaturesCol("features")
         ,
-        new IndexToString()
-          .setInputCol("prediction")
-          .setOutputCol("predictedLabel")
-          .setLabels(labelIndexer.labels)
+       // new LinearSVC().setMaxIter(10).setRegParam(0.1). // mouaif, toujours -1
+          new RandomForestClassifier().setNumTrees(500).
+        //new GBTClassifier().setFeatureSubsetStrategy("auto").
+        //new NaiveBayes().setProbabilityCol("proba").
+          setLabelCol("indexedLabel").
+          setFeaturesCol("indexedFeatures")
+        ,
+        new IndexToString().
+          setInputCol("prediction").
+          setOutputCol("predictedLabel").
+          setLabels(labelIndexer.labels)
       ))
     val predictions = pl.fit(trainingData).transform(testData)
 
-    predictions.select($"predictedLabel", $"targetClass",  $"P+5", $"features").show(50)
+    predictions.select($"predictedLabel", $"Class",  $"P-S+5", $"features").show(50)
 
     val evaluator = new MulticlassClassificationEvaluator().
       setLabelCol("indexedLabel").
@@ -226,7 +243,7 @@ df_withT.write.mode("overwrite").saveAsTable("df_withT")
     val accuracy = evaluator.evaluate(predictions)
     println(s"Test Error = ${1.0 - accuracy}")
 
-    predictions.groupBy("predictedLabel", "targetClass").agg(count("*")).orderBy($"predictedLabel").show
+    predictions.groupBy("predictedLabel", "Class").agg(count("*")).orderBy($"predictedLabel").show
 
 
     pl.fit( data_raw.na.drop).write.overwrite().save("spark/ml/RandomForestClassifier")
