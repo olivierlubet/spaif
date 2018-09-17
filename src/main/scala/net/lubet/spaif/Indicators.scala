@@ -35,12 +35,14 @@ object Indicators {
       
     sql(
       """
-        |ALTER TABLE indicator DROP PARTITION (type = "Class")
+        |ALTER TABLE indicator DROP PARTITION (type = "gt0.02")
       """.stripMargin)
       
   }
 
   def prepare = {
+val df = sql("select * from indicator").cache
+
 
     add(closeIndic)
     add(movingAverage("Close", "XS", 3))
@@ -74,9 +76,13 @@ object Indicators {
     add(diff("P-S-15","P-S-30"))
 
     add(classification)
-    add(classificationBin)
+    add(classificationBinGt("P-S+5",5))
+    add(classificationBinGt("P-S+5",4))
+    add(classificationBinGt("P-S+5",3))
+    add(classificationBinGt("P-S+5",2))
 
-    val data =     pivot().cache()
+    sqlContext.clearCache()
+    val data = pivot().cache()
     data.write.mode(SaveMode.Overwrite).saveAsTable("data")
     data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("spark/stock_value.csv")
     
@@ -93,7 +99,7 @@ object Indicators {
     | when value>0.05 then 5.0
     | when value>0.03 then 3.0
     | when value>0.01 then 1.0
-    | else -1.0
+    | else 0.0
     |end value
     |--, value as test
     |from indicator
@@ -101,16 +107,16 @@ object Indicators {
     """.stripMargin)
   }
   
-  def classificationBin():DataFrame={
-    sql("""
-    |select isin,date,"ClassBin" type,
+  
+  def classificationBinGt(from:String, threshold : Integer):DataFrame={
+    sql(s"""
+    |select isin,date,"gt${threshold}" type,
     |case 
-    | when value>0.05 then 5.0
-    | else -1.0
+    | when (value*100)>$threshold then 1.0
+    | else 0.0
     |end value
-    |--, value as test
     |from indicator
-    | where type="P-S+5"
+    | where type="$from"
     """.stripMargin)
   }
 
