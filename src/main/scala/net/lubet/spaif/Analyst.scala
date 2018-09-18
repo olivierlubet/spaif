@@ -23,13 +23,10 @@ object Analyst {
   import Context._
 
   def machinePrediction():Unit={
-    val rfc = RandomForestClassificationModel.load("spark/ml/RandomForestClassifier")
-    
-    val its = IndexToString.load("spark/ml/IndexToString")
     
     val data = sql("""
     select d.* from data d
-    where date>"2018-09-01"
+    where date>date_sub(now(),5)
     --join (
     --select isin, max(date) date from data group by isin
     --) as dm on d.isin=dm.isin and d.date=dm.date
@@ -38,6 +35,7 @@ object Analyst {
     
     val pl = new Pipeline().
       setStages(Array(
+        /*
         new StringIndexer().
           setInputCol("isin").
           setOutputCol("isin_i").
@@ -46,43 +44,34 @@ object Analyst {
         new OneHotEncoderEstimator().
           setInputCols(Array("isin_i")). //, "ISIN_i")).
           setOutputCols(Array("isin_v")) //, "ISIN_v"))
-        ,
+        ,*/
         new VectorAssembler().
-          setInputCols(Array(
-          "isin_v",
-          "D-L/XL-1",
-          "D-M/L-1",
-          "D-P-S-15-1",
-          "D-P-S-30-1",
-          "D-P-S-5-1",
-          "D-S/L-1",
-          "D-S/M-1",
-          "D-XS/S-1",
-          "L/XL",
-          "M/L",
-          "P-S-1",
-          "P-S-1-P-S-5",
-          "P-S-15",
-          "P-S-15-P-S-30",
-          "P-S-30",
-          "P-S-5",
-          "P-S-5-P-S-15",
-          "S/L",
-          "S/M",
-          "XS/S"
-          )).
+          setInputCols(colFeatures).
           setOutputCol("features")
       ))
+    val preparedData = pl.fit(data).transform(data)
     
-    its.transform(rfc.transform(pl.fit(data).transform(data))).createOrReplaceTempView("prediction")
+    //val rfc = RandomForestClassificationModel.load("spark/ml/rfc/gt2")
+    //rfc.transform(preparedData)
     
-    sql("select isin,date,predictedLabel from prediction order by predictedLabel desc").show
+    val models = Array("gt2","gt3","gt4","gt5").map(s =>
+      RandomForestClassificationModel.load("spark/ml/rfc/"+s)
+      )
+    
+    val res = models.foldLeft(preparedData)((acc,model)=> {
+      model.transform(acc)
+    })
+    
+    res.createOrReplaceTempView("prediction")
+    
+    sql(s"""select isin,date,${colPredicted.map(s=>s"`$s`").mkString(",")} from prediction order by date desc,${colPredicted.map(s=>s"`$s` desc").mkString(",")}""").show
     
   }
 
   def machineLearning(): Unit = {
     
     sqlContext.clearCache()
+    
     val data_raw = sql("""
     select * from data 
     where isin in ("FR0000045072","FR0000130809","FR0000120172","FR0000054470","FR0000031122","FR0000120404")
@@ -92,107 +81,15 @@ object Analyst {
     """).cache()
 
 
-
-    buildModel("gt2",data_raw)
+    colLabels.foreach(buildModel(_,data_raw))
+    
+    /*buildModel("gt2",data_raw)
     
     buildModel("gt5",data_raw)
     
     buildModel("gt3",data_raw)
-    buildModel("gt4",data_raw)
+    buildModel("gt4",data_raw)*/
 
-    val Array(trainingData, testData) = data_raw.select.na.drop.randomSplit(Array(0.8, 0.2))
-
-/*    val labelIndexer = new StringIndexer().
-      setInputCol("Class").
-      setOutputCol("indexedLabel").
-      fit(data_raw)
-*/
-    val pl = new Pipeline().
-      setStages(Array(
-
-        //labelIndexer,
-        /*new StringIndexer().
-          setInputCol("isin").
-          setOutputCol("isin_i").
-          setHandleInvalid("skip")
-        ,
-        new OneHotEncoderEstimator().
-          setInputCols(Array("isin_i")). //, "ISIN_i")).
-          setOutputCols(Array("isin_v")) //, "ISIN_v"))
-        ,*/
-        new VectorAssembler().
-          setInputCols(Array(
-          //"isin_v",
-          "D-L/XL-1",
-          "D-M/L-1",
-          "D-P-S-15-1",
-          "D-P-S-30-1",
-          "D-P-S-5-1",
-          "D-S/L-1",
-          "D-S/M-1",
-          "D-XS/S-1",
-          "L/XL",
-          "M/L",
-          "P-S-1",
-          "P-S-1-P-S-5",
-          "P-S-15",
-          "P-S-15-P-S-30",
-          "P-S-30",
-          "P-S-5",
-          "P-S-5-P-S-15",
-          "S/L",
-          "S/M",
-          "XS/S"
-          )).
-          setOutputCol("features")
-        /*
-        new MinMaxScaler(). //StandardScaler()
-          setInputCol("features").
-          setOutputCol("scaledFeatures").
-          setMin(0)
-        ,
-        new VectorIndexer().
-          setInputCol("scaledFeatures").
-          setOutputCol("indexedFeatures").
-          setMaxCategories(50).
-          setHandleInvalid("skip")
-        ,*/
-       // new LinearSVC().setMaxIter(10).setRegParam(0.1). // mouaif, toujours -1
-        
-      ))
-      
-      
-    val rfc = new RandomForestClassifier().setNumTrees(50).
-          setLabelCol("gt2").
-          setFeaturesCol("features").
-          setPredictionCol("pred-gt2")
-          
-    val model = rfc.fit(pl.fit(trainingData).transform(trainingData))
-          
-          
-/*    val indextoString = new IndexToString().
-          setInputCol("prediction").
-          setOutputCol("predictedLabel").
-          setLabels(labelIndexer.labels)
-  indextoString.write.overwrite().save("spark/ml/IndexToString")
-  */        
-    val predictions =        //indextoString.transform(
-          model.transform(pl.fit(testData).transform(testData))
-          //)
-
-    predictions.select($"pred-gt2", $"gt2",  $"P-S+5", $"features").show(50)
-
-    val evaluator = new MulticlassClassificationEvaluator().
-      setLabelCol("gt2").
-      setPredictionCol("pred-gt2").
-      setMetricName("accuracy")
-    val accuracy = evaluator.evaluate(predictions)
-    println(s"Test Error = ${1.0 - accuracy}")
-
-    predictions.groupBy("pred-gt2", "gt2").agg(count("*")).orderBy(desc("pred-gt2")).show
-
-
-    rfc.fit(pl.fit(data_raw.na.drop).transform(data_raw.na.drop) ).write.overwrite().save("spark/ml/RandomForestClassifier")
   }
 
 
@@ -201,7 +98,8 @@ object Analyst {
     
     println(s"Build model for $from")
     
-    val Array(trainingData, testData) = data_raw.select(from, colFeatures: _*).na.drop.randomSplit(Array(0.8, 0.2))
+    val pertinentData=data_raw.select(from, colFeatures: _*).na.drop
+    val Array(trainingData, testData) = pertinentData.randomSplit(Array(0.8, 0.2))
 
     val pl = new Pipeline().
       setStages(Array(
@@ -215,7 +113,9 @@ object Analyst {
     val rfc = new RandomForestClassifier().setNumTrees(50).
           setLabelCol(from).
           setFeaturesCol("features").
-          setPredictionCol(to)
+          setPredictionCol(to).
+          setRawPredictionCol("rawPrediction-"+from).
+          setProbabilityCol("probability-"+from)
           
     val model = rfc.fit(pl.fit(trainingData).transform(trainingData))
           
@@ -230,7 +130,7 @@ object Analyst {
 
     predictions.groupBy(to,from).agg(count("*")).orderBy(desc(to)).show
 
-    rfc.fit(pl.fit(data_raw.na.drop).transform(data_raw.na.drop) ).write.overwrite().save(s"spark/ml/rfc/$from")
+    rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"spark/ml/rfc/$from")
     
     val total = predictions.count
     val opportunitiesDetected = predictions.filter(col(to) === 1).count
@@ -278,6 +178,9 @@ object Analyst {
           "S/L",
           "S/M",
           "XS/S")
+          
+    val colLabels = Array("gt2","gt3","gt4","gt5")
+    def colPredicted = colLabels.map(s=>"prediction-"+s)
   /*
 new GBTClassifier().setFeatureSubsetStrategy("auto").
 accuracy: Double = 0.894431554524362

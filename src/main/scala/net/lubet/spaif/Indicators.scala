@@ -41,7 +41,9 @@ object Indicators {
   }
 
   def prepare = {
-val df = sql("select * from indicator").cache
+    
+    sqlContext.clearCache()
+    val df = sql("select * from indicator").cache
 
 
     add(closeIndic)
