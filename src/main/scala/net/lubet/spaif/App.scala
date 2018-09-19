@@ -1,17 +1,25 @@
 package net.lubet.spaif
 
-object App extends App {
-  println("SPAIF")
+import net.lubet.spaif.Indicators._
 
-  //Euronext.getList().show()
-  //Euronext.getList().printSchema()
-  //val df1 = Euronext.getStock("FR0000031122",true)
-  //val df2 = Euronext.getStock("FR0000076887",true)
-  //val df = df1.unionAll(df2)
-  //println("count:" + df.count())
-  //df.show()
-  Euronext.consolidate(100)
+object App extends App {
+  println(
+    """
+      |
+      |  ___________________  _____  .______________
+      | /   _____/\______   \/  _  \ |   \_   _____/
+      | \_____  \  |     ___/  /_\  \|   ||    __)
+      | /        \ |    |  /    |    \   ||     \
+      |/_______  / |____|  \____|__  /___|\___  /
+      |        \/                  \/         \/
+      |
+    """.stripMargin)
+
+  Euronext.consolidate(200)
   Indicators.compute
+  Analyst.learn
   Analyst.predict
+  Indicators.export
   Context.spark.close
+
 }

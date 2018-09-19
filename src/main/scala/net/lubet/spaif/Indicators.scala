@@ -83,22 +83,24 @@ object Indicators {
     time(add(diff("P-S-5", "P-S-15")))
     time(add(diff("P-S-15", "P-S-30")))
 
-    time(add(classification))
+    time(add(classification()))
     time(add(classificationBinGt("P-S+5", 5)))
     time(add(classificationBinGt("P-S+5", 4)))
     time(add(classificationBinGt("P-S+5", 3)))
     time(add(classificationBinGt("P-S+5", 2)))
     time(add(classificationBinGt("P-S+5", 1)))
+  }
 
+  def export={
     time({
       println("write table data")
       sqlContext.clearCache()
       val data = pivot().cache()
       data.write.mode(SaveMode.Overwrite).saveAsTable("data")
-      data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("csv/stock_value.csv")
+      data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("data/stock_value.csv")
 
       val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
-      val filePath = fs.globStatus(new Path("csv/stock_value.csv/part*"))(0).getPath()
+      val filePath = fs.globStatus(new Path("data/stock_value.csv/part*"))(0).getPath()
       fs.rename(filePath, new Path("data.csv"))
     })
   }
@@ -141,7 +143,7 @@ object Indicators {
   def performance(indicatorType: String, delay: Integer): DataFrame = {
     sql(
       s"""
-         |select isin,date,"P-$indicatorType${if (delay < 0) "" else "+"}$delay" type,val1/val2-1 value
+         |select isin,date,"P-$indicatorType${if (delay < 0) "" else "+"}$delay" type,${if (delay < 0) "val1/val2-1" else "val2/val1-1"} value
          |from (
          |select isin,date, value as val1,
          |LAG(value,${-delay}) OVER (PARTITION BY i.isin ORDER BY i.date ASC) AS val2

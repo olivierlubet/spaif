@@ -23,7 +23,7 @@ object Analyst {
   import Context.spark._
   import Context._
 
-  def predict():Unit={
+  def predict={
     
     val data = sql("""
     select d.* from data d
@@ -55,20 +55,20 @@ object Analyst {
     //rfc.transform(preparedData)
     
     val models = colLabels.map(s =>
-      RandomForestClassificationModel.load("spark/ml/rfc/"+s)
+      RandomForestClassificationModel.load("data/ml/rfc/"+s)
       )
     
     val res = models.foldLeft(preparedData)((acc,model)=> {
       model.transform(acc)
     })
     
-    res.createOrReplaceTempView("prediction")
+    res.write.mode(SaveMode.Overwrite).partitionBy("isin", "type").saveAsTable("prediction")
     
     sql(s"""select isin,date,${colPredicted.map(s=>s"`$s`").mkString(",")} from prediction order by date desc,${colPredicted.map(s=>s"`$s` desc").mkString(",")}""").show
     
   }
 
-  def learn(): Unit = {
+  def learn: Unit = {
     
     sqlContext.clearCache()
     
@@ -76,19 +76,11 @@ object Analyst {
     select * from data 
     --where isin in ("FR0000045072","FR0000130809","FR0000120172","FR0000054470","FR0000031122","FR0000120404")
     where isin in (
-    select isin from quotation group by isin order by count(isin) desc limit 10
+    select isin from quotation group by isin order by count(isin) desc limit 20
     )
     """).cache()
 
     colLabels.foreach(buildModel(_,data_raw))
-    
-    /*buildModel("gt2",data_raw)
-    
-    buildModel("gt5",data_raw)
-    
-    buildModel("gt3",data_raw)
-    buildModel("gt4",data_raw)*/
-
   }
 
   def buildModel(from:String, data_raw:DataFrame) = {
@@ -128,7 +120,7 @@ object Analyst {
 
     predictions.groupBy(to,from).agg(count("*")).orderBy(desc(to)).show
 
-    rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"spark/ml/rfc/$from")
+    rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"data/ml/rfc/$from")
     
     val total = predictions.count
     val opportunitiesDetected = predictions.filter(col(to) === 1).count
