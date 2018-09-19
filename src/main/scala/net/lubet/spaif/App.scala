@@ -1,7 +1,7 @@
 package net.lubet.spaif
 
 object App extends App {
-  println("Hello")
+  println("SPAIF")
 
   //Euronext.getList().show()
   //Euronext.getList().printSchema()
@@ -10,6 +10,8 @@ object App extends App {
   //val df = df1.unionAll(df2)
   //println("count:" + df.count())
   //df.show()
-  Euronext.consolidate(1000)
+  Euronext.consolidate(100)
+  Indicators.prepare
+  Analyst.machinePrediction
   Context.spark.close
 }

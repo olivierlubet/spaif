@@ -5,14 +5,22 @@ package net.lubet.spaif
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
-
 import org.apache.hadoop.fs._
+import org.apache.spark.storage.StorageLevel
 
 object Indicators {
 
   import Context.spark.implicits._
   import Context.spark._
   import Context._
+
+  def time[R](block: => R): R = {
+    val t0 = System.nanoTime()
+    val result = block // call-by-name
+    val t1 = System.nanoTime()
+    println("Elapsed time: " + (t1 - t0)/1000000000 + "s")
+    result
+  }
 
   def init = {
     sql(
@@ -32,93 +40,93 @@ object Indicators {
       """
         |ALTER TABLE indicator DROP PARTITION (isin="__HIVE_DEFAULT_PARTITION__")
       """.stripMargin)
-      
+
     sql(
       """
         |ALTER TABLE indicator DROP PARTITION (type = "gt0.02")
       """.stripMargin)
-      
+
   }
 
   def prepare = {
-    
+
     sqlContext.clearCache()
-    val df = sql("select * from indicator").cache
 
+    time(add(closeIndic))
+    time(add(movingAverage("Close", "XS", 3)))
+    time(add(movingAverage("Close", "S", 6)))
+    time(add(movingAverage("Close", "M", 12)))
+    time(add(movingAverage("Close", "L", 30)))
+    time(add(movingAverage("Close", "XL", 90)))
+    time(add(rate("S", "L")))
+    time(add(rate("S", "M")))
+    time(add(rate("M", "L")))
+    time(add(rate("XS", "S")))
+    time(add(rate("L", "XL")))
 
-    add(closeIndic)
-    add(movingAverage("Close", "XS", 3))
-    add(movingAverage("Close", "S", 6))
-    add(movingAverage("Close", "M", 12))
-    add(movingAverage("Close", "L", 30))
-    add(movingAverage("Close", "XL", 90))
-    add(rate("S", "L"))
-    add(rate("S", "M"))
-    add(rate("M", "L"))
-    add(rate("XS", "S"))
-    add(rate("L", "XL"))
+    time(add(performance("S", 5)))
+    time(add(performance("S", -1)))
+    time(add(performance("S", -5)))
+    time(add(performance("S", -15)))
+    time(add(performance("S", -30)))
 
-    add(performance("S", 5))
-    add(performance("S", -1))
-    add(performance("S", -5))
-    add(performance("S", -15))
-    add(performance("S", -30))
+    time(add(derivative("P-S-5", -1)))
+    time(add(derivative("P-S-15", -1)))
+    time(add(derivative("P-S-30", -1)))
+    time(add(derivative("S/M", -1)))
+    time(add(derivative("S/L", -1)))
+    time(add(derivative("M/L", -1)))
+    time(add(derivative("XS/S", -1)))
+    time(add(derivative("L/XL", -1)))
 
-    add(derivative("P-S-5",-1))
-    add(derivative("P-S-15",-1))
-    add(derivative("P-S-30",-1))
-    add(derivative("S/M",-1))
-    add(derivative("S/L",-1))
-    add(derivative("M/L",-1))
-    add(derivative("XS/S",-1))
-    add(derivative("L/XL",-1))
+    time(add(diff("P-S-1", "P-S-5")))
+    time(add(diff("P-S-5", "P-S-15")))
+    time(add(diff("P-S-15", "P-S-30")))
 
-    add(diff("P-S-1","P-S-5"))
-    add(diff("P-S-5","P-S-15"))
-    add(diff("P-S-15","P-S-30"))
-
-    add(classification)
-    add(classificationBinGt("P-S+5",5))
-    add(classificationBinGt("P-S+5",4))
-    add(classificationBinGt("P-S+5",3))
-    add(classificationBinGt("P-S+5",2))
+    time(add(classification))
+    time(add(classificationBinGt("P-S+5", 5)))
+    time(add(classificationBinGt("P-S+5", 4)))
+    time(add(classificationBinGt("P-S+5", 3)))
+    time(add(classificationBinGt("P-S+5", 2)))
 
     sqlContext.clearCache()
     val data = pivot().cache()
     data.write.mode(SaveMode.Overwrite).saveAsTable("data")
     data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("spark/stock_value.csv")
-    
+
     val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
     val filePath = fs.globStatus(new Path("spark/stock_value.csv/part*"))(0).getPath()
     fs.rename(filePath, new Path("data.csv"))
 
   }
 
-  def classification():DataFrame={
-    sql("""
-    |select isin,date,"Class" type,
-    |case 
-    | when value>0.05 then 5.0
-    | when value>0.03 then 3.0
-    | when value>0.01 then 1.0
-    | else 0.0
-    |end value
-    |--, value as test
-    |from indicator
-    | where type="P-S+5"
-    """.stripMargin)
+  def classification(): DataFrame = {
+    sql(
+      """
+        |select isin,date,"Class" type,
+        |case
+        | when value>0.05 then 5.0
+        | when value>0.03 then 3.0
+        | when value>0.01 then 1.0
+        | else 0.0
+        |end value
+        |--, value as test
+        |from indicator
+        | where type="P-S+5"
+      """.stripMargin)
   }
-  
-  
-  def classificationBinGt(from:String, threshold : Integer):DataFrame={
-    sql(s"""
-    |select isin,date,"gt${threshold}" type,
-    |case 
-    | when (value*100)>$threshold then 1.0
-    | else 0.0
-    |end value
-    |from indicator
-    | where type="$from"
+
+
+  def classificationBinGt(from: String, threshold: Integer): DataFrame = {
+    sql(
+      s"""
+         |select isin,date,"gt${threshold}" type,
+         |case
+         | when (value*100)>$threshold then 1.0
+         | else 0.0
+         |end value
+         |from indicator
+         | where type="$from"
     """.stripMargin)
   }
 
@@ -162,7 +170,7 @@ object Indicators {
       """.stripMargin)
   }
 
-  def diff(diminuende : String, diminutor : String): DataFrame = {
+  def diff(diminuende: String, diminutor: String): DataFrame = {
     //pivot(diminuende, diminutor).createOrReplaceTempView("tmp_pivot")
     sql(
       s"""
@@ -174,11 +182,13 @@ object Indicators {
   }
 
   def rate(numerator: String, denominator: String): DataFrame = {
-    pivot(numerator, denominator).createOrReplaceTempView("tmp_pivot")
+    //pivot(numerator, denominator).createOrReplaceTempView("tmp_pivot") // <-- A changer !!!
     sql(
       s"""
-         |select i.isin,i.date,"$numerator/$denominator" as type, i.$numerator/i.$denominator-1 as value
-         |from tmp_pivot i
+         |select i1.isin,i2.date,"$numerator/$denominator" as type, i1.value/i2.value-1 as value
+         |from indicator i1
+         |join indicator i2 on i1.isin=i2.isin and i1.date=i2.date
+         |where i1.type="$numerator" and i2.type="$denominator"
       """.stripMargin)
   }
 
@@ -218,17 +228,22 @@ object Indicators {
   def add(df: DataFrame) = {
 
     if (df.head(1).nonEmpty) {
+
       val index = df.head.fieldIndex("type")
       val indicatorType = df.head.getString(index)
 
-      val ref = sql(s"""select isin, max(date) date  from indicator where type="$indicatorType" group by isin""")
-      val adding = df.join(ref, ref("isin") === df("isin"), "left").filter(df("date") > ref("date") || ref("date").isNull).select(df("isin"),df("date"),df("value"),df("type"))
-      println(s"Adding ${adding.count} rows for $indicatorType")
+      val ref = maxDates.filter($"type" === indicatorType)
+      //val adding = df.join(ref, ref("isin") === df("isin"), "left").filter(df("date") > ref("date") || ref("date").isNull).select(df("isin"),df("date"),df("value"),df("type"))
+      val adding = df.join(ref, ref("isin") === df("isin"), "left").filter(df("date") > ref("date") || ref("date").isNull).select(df("isin"), df("date"), df("value"), df("type"))
+
+      println(s"Adding rows for $indicatorType") //${adding.count}
       adding.write.mode(SaveMode.Append).partitionBy("isin", "type").saveAsTable("indicator")
     }
   }
 
-  def closeIndic = sql(
+  lazy val maxDates = sql(s"""select isin, type, max(date) date from indicator group by isin,type""").persist(StorageLevel.MEMORY_ONLY)
+
+  lazy val closeIndic = sql(
     """
       |select q.isin,q.date,"Close" type, q.Open Value
       |from quotation q

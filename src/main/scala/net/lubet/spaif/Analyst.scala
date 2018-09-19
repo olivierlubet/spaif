@@ -15,6 +15,7 @@ import org.apache.spark.sql.functions._
 import org.apache.hadoop.fs._
 
 // java -Xms12G -Xmx12G -XX:ReservedCodeCacheSize=128m -XX:MaxMetaspaceSize=256m -jar /usr/share/sbt/bin/sbt-launch.jar console
+// java -Xms10G -Xmx10G -XX:ReservedCodeCacheSize=128m -XX:MaxMetaspaceSize=256m -jar "C:\Program Files (x86)\sbt\bin\sbt-launch.jar" console
 
 object Analyst {
 
