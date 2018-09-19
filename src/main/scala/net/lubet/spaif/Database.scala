@@ -16,27 +16,27 @@ object Database {
   }
 
   def stock: DataFrame = {
-    //Context.spark.table("stock").cache
+    Context.spark.table("stock").cache
 
-    Context.spark.read.parquet("spark/stock").
+    /*Context.spark.read.parquet("spark/stock").
       repartition($"ISIN").
-      cache()
+      cache()*/
   }
 
   def quotation: DataFrame = {
-    //Context.spark.table("quotation").cache
+    Context.spark.table("quotation").cache
 
-    Context.spark.read.parquet("spark/quotation").
+    /*Context.spark.read.parquet("spark/quotation").
       repartition($"ISIN").
-      cache()
+      cache()*/
     //withColumn("Day_Count", row_number().over(Window.partitionBy($"ISIN").orderBy($"Date"))).
   }
 
   def data: DataFrame = {
-    //Context.spark.table("data").cache
-    Context.spark.read.parquet("spark/data").
+    Context.spark.table("data").cache
+    /*Context.spark.read.parquet("spark/data").
       repartition($"ISIN").
-      cache
+      cache*/
   }
 
   def lastQuotation: DataFrame = {

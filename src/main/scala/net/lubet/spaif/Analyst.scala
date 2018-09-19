@@ -23,7 +23,7 @@ object Analyst {
   import Context.spark._
   import Context._
 
-  def machinePrediction():Unit={
+  def predict():Unit={
     
     val data = sql("""
     select d.* from data d
@@ -32,8 +32,7 @@ object Analyst {
     --select isin, max(date) date from data group by isin
     --) as dm on d.isin=dm.isin and d.date=dm.date
     """)
-    
-    
+
     val pl = new Pipeline().
       setStages(Array(
         /*
@@ -55,7 +54,7 @@ object Analyst {
     //val rfc = RandomForestClassificationModel.load("spark/ml/rfc/gt2")
     //rfc.transform(preparedData)
     
-    val models = Array("gt2","gt3","gt4","gt5").map(s =>
+    val models = colLabels.map(s =>
       RandomForestClassificationModel.load("spark/ml/rfc/"+s)
       )
     
@@ -69,18 +68,17 @@ object Analyst {
     
   }
 
-  def machineLearning(): Unit = {
+  def learn(): Unit = {
     
     sqlContext.clearCache()
     
     val data_raw = sql("""
     select * from data 
-    where isin in ("FR0000045072","FR0000130809","FR0000120172","FR0000054470","FR0000031122","FR0000120404")
-    --where isin in (
-    --select isin from quotation group by isin order by count(isin) desc limit 10
-    --)
+    --where isin in ("FR0000045072","FR0000130809","FR0000120172","FR0000054470","FR0000031122","FR0000120404")
+    where isin in (
+    select isin from quotation group by isin order by count(isin) desc limit 10
+    )
     """).cache()
-
 
     colLabels.foreach(buildModel(_,data_raw))
     
@@ -92,7 +90,6 @@ object Analyst {
     buildModel("gt4",data_raw)*/
 
   }
-
 
   def buildModel(from:String, data_raw:DataFrame) = {
     val to = "prediction-"+from
@@ -139,7 +136,7 @@ object Analyst {
     val falsePositive = predictions.filter(col(from) === 0 && col(to) === 1).count
     val falseNegative = predictions.filter(col(from) === 1 && col(to) === 0).count
     val ok = predictions.filter(col(from) === 1 && col(to) === 1).count
-    val bad = predictions.filter($"P-S+5" < 0.01 && col(to) ===1).count
+    val bad = predictions.filter($"P-S+5" < 0.005 && col(to) ===1).count
     
     val missed = opportunitiesReal - opportunitiesDetected
     
@@ -180,7 +177,7 @@ object Analyst {
           "S/M",
           "XS/S")
           
-    val colLabels = Array("gt2","gt3","gt4","gt5")
+    val colLabels = Array("gt1","gt2","gt3","gt4","gt5")
     def colPredicted = colLabels.map(s=>"prediction-"+s)
   /*
 new GBTClassifier().setFeatureSubsetStrategy("auto").
@@ -233,5 +230,4 @@ new LinearSVC().setMaxIter(10).setRegParam(0.1).
 |           Bof|   Negative|     210|
 +--------------+-----------+--------+
    */
-
 }

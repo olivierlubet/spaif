@@ -11,7 +11,7 @@ object App extends App {
   //println("count:" + df.count())
   //df.show()
   Euronext.consolidate(100)
-  Indicators.prepare
-  Analyst.machinePrediction
+  Indicators.compute
+  Analyst.predict
   Context.spark.close
 }

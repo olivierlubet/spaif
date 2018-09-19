@@ -18,7 +18,7 @@ object Indicators {
     val t0 = System.nanoTime()
     val result = block // call-by-name
     val t1 = System.nanoTime()
-    println("Elapsed time: " + (t1 - t0)/1000000000 + "s")
+    println("Elapsed time: " + (t1 - t0) / 1000000000 + "s")
     result
   }
 
@@ -48,7 +48,7 @@ object Indicators {
 
   }
 
-  def prepare = {
+  def compute = {
 
     sqlContext.clearCache()
 
@@ -88,16 +88,19 @@ object Indicators {
     time(add(classificationBinGt("P-S+5", 4)))
     time(add(classificationBinGt("P-S+5", 3)))
     time(add(classificationBinGt("P-S+5", 2)))
+    time(add(classificationBinGt("P-S+5", 1)))
 
-    sqlContext.clearCache()
-    val data = pivot().cache()
-    data.write.mode(SaveMode.Overwrite).saveAsTable("data")
-    data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("spark/stock_value.csv")
+    time({
+      println("write table data")
+      sqlContext.clearCache()
+      val data = pivot().cache()
+      data.write.mode(SaveMode.Overwrite).saveAsTable("data")
+      data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("csv/stock_value.csv")
 
-    val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
-    val filePath = fs.globStatus(new Path("spark/stock_value.csv/part*"))(0).getPath()
-    fs.rename(filePath, new Path("data.csv"))
-
+      val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
+      val filePath = fs.globStatus(new Path("csv/stock_value.csv/part*"))(0).getPath()
+      fs.rename(filePath, new Path("data.csv"))
+    })
   }
 
   def classification(): DataFrame = {
@@ -115,7 +118,6 @@ object Indicators {
         | where type="P-S+5"
       """.stripMargin)
   }
-
 
   def classificationBinGt(from: String, threshold: Integer): DataFrame = {
     sql(
@@ -216,7 +218,6 @@ object Indicators {
     if (columnList.isEmpty) df.pivot("type").agg(sum($"value"))
     else df.pivot("type", columnList).agg(sum($"value"))
   }
-
 
   def stats = {
     sql(

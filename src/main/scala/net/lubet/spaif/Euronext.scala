@@ -32,7 +32,7 @@ object Euronext {
   }
 
   def refreshList = {
-    val file = new File("spark/EuronextList.csv")
+    val file = new File("./EuronextList.csv")
     val bw = new BufferedWriter(new FileWriter(file))
     bw.write(dlList)
     bw.close()
@@ -62,7 +62,7 @@ object Euronext {
       option("sep", ";").
       option("timestampFormat", "dd/MM/yyyy HH:mm").
       schema(schema).
-      csv("spark/EuronextList.csv").
+      csv("./EuronextList.csv").
       withColumnRenamed("Trading Currency", "Trading_Currency").
       withColumnRenamed("Last Date/Time", "Last_DateTime").
       withColumnRenamed("Time Zone", "Time_Zone").
@@ -124,8 +124,10 @@ object Euronext {
 
         if (to.getTime > from.getTime) {
           println(s"Working for $isin from $from to $to (${from.getTime} , ${to.getTime})")
-          Euronext.refreshStock(isin, Option(from), Option(to))
-          Source.fromFile(s"spark/s/${isin}.csv").getLines.toList.drop(4)
+
+          //Euronext.refreshStock(isin, Option(from), Option(to))
+          //Source.fromFile(s"spark/s/${isin}.csv").getLines.toList.drop(4)
+          Euronext.dlStock(isin, Option(from), Option(to)).split('\n').toList.drop(4)
         } else {
           println(s"$isin already up to date")
           List.empty
