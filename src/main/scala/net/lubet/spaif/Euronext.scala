@@ -80,7 +80,7 @@ object Euronext {
       case Some(d) => d.getTime // 2018-09-03 format 1535328000000
     }
     val to = targetDate match {
-      case None => (new java.sql.Date(System.currentTimeMillis).getTime + 86400000).toString // 2000-01-01
+      case None => (new java.sql.Date(System.currentTimeMillis).getTime + 86400000).toString // 2018-01-01
       case Some(d) => d.getTime // 2018-09-03 format 1535328000000
     }
 
@@ -151,7 +151,7 @@ object Euronext {
 
       delta.flatMap {
         case Row(isin: String, toTS: Timestamp, from: Date) =>
-          loadStock(isin, toTS, from)
+          loadStock(isin, new Timestamp(toTS.getTime+ 24*60*60*1000), from) //new Timestamp(24*60*60*1000)
         case Row(isin: String, toTS: Timestamp, null) =>
           loadStock(isin, toTS, new Date(946681200000l))
       }

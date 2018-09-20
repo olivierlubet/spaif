@@ -27,7 +27,7 @@ object Analyst {
     
     val data = sql("""
     select d.* from data d
-    where date>date_sub(now(),5)
+    where date>date_sub(now(),10)
     --join (
     --select isin, max(date) date from data group by isin
     --) as dm on d.isin=dm.isin and d.date=dm.date
@@ -61,11 +61,10 @@ object Analyst {
     val res = models.foldLeft(preparedData)((acc,model)=> {
       model.transform(acc)
     })
-    
-    res.write.mode(SaveMode.Overwrite).partitionBy("isin", "type").saveAsTable("prediction")
-    
+
+
+    res.write.mode(SaveMode.Overwrite).partitionBy("isin").saveAsTable("prediction")
     sql(s"""select isin,date,${colPredicted.map(s=>s"`$s`").mkString(",")} from prediction order by date desc,${colPredicted.map(s=>s"`$s` desc").mkString(",")}""").show
-    
   }
 
   def learn: Unit = {

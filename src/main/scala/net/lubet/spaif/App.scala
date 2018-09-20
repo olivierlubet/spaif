@@ -1,6 +1,5 @@
 package net.lubet.spaif
 
-import net.lubet.spaif.Indicators._
 
 object App extends App {
   println(
