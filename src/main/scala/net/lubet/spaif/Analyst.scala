@@ -24,7 +24,7 @@ object Analyst {
   import Context._
 
   def predict={
-    
+    sqlContext.clearCache()
     val data = sql("""
     select d.* from data d
     where date>date_sub(now(),10)
@@ -35,25 +35,12 @@ object Analyst {
 
     val pl = new Pipeline().
       setStages(Array(
-        /*
-        new StringIndexer().
-          setInputCol("isin").
-          setOutputCol("isin_i").
-          setHandleInvalid("skip")
-        ,
-        new OneHotEncoderEstimator().
-          setInputCols(Array("isin_i")). //, "ISIN_i")).
-          setOutputCols(Array("isin_v")) //, "ISIN_v"))
-        ,*/
         new VectorAssembler().
           setInputCols(colFeatures).
           setOutputCol("features")
       ))
     val preparedData = pl.fit(data).transform(data)
-    
-    //val rfc = RandomForestClassificationModel.load("spark/ml/rfc/gt2")
-    //rfc.transform(preparedData)
-    
+
     val models = colLabels.map(s =>
       RandomForestClassificationModel.load("data/ml/rfc/"+s)
       )
@@ -62,9 +49,15 @@ object Analyst {
       model.transform(acc)
     })
 
-
-    res.write.mode(SaveMode.Overwrite).partitionBy("isin").saveAsTable("prediction")
-    sql(s"""select isin,date,${colPredicted.map(s=>s"`$s`").mkString(",")} from prediction order by date desc,${colPredicted.map(s=>s"`$s` desc").mkString(",")}""").show
+    res.createOrReplaceTempView("prediction")//.write.mode(SaveMode.Overwrite).partitionBy("isin").saveAsTable("prediction")
+    sql(
+      s"""select isin,date,
+         |${colPredicted.map(s=>s"`$s`").mkString(",")},
+         |`probability-gt3`
+         |from prediction order by date desc,
+         |${colPredicted.map(s=>s"`$s` desc").mkString(",")},
+         |`probability-gt3` desc
+       """.stripMargin).show
   }
 
   def learn: Unit = {
@@ -74,9 +67,9 @@ object Analyst {
     val data_raw = sql("""
     select * from data 
     --where isin in ("FR0000045072","FR0000130809","FR0000120172","FR0000054470","FR0000031122","FR0000120404")
-    where isin in (
-    select isin from quotation group by isin order by count(isin) desc limit 20
-    )
+    --where isin in (
+    --select isin from quotation group by isin order by count(isin) desc limit 20
+    --)
     """).cache()
 
     colLabels.foreach(buildModel(_,data_raw))
@@ -88,7 +81,7 @@ object Analyst {
     println(s"Build model for $from")
     
     val pertinentData=data_raw.select(from, colFeatures: _*).na.drop
-    val Array(trainingData, testData) = pertinentData.randomSplit(Array(0.8, 0.2))
+    val Array(trainingData, testData) = pertinentData.randomSplit(Array(0.08, 0.02))
 
     val pl = new Pipeline().
       setStages(Array(
@@ -121,104 +114,51 @@ object Analyst {
 
     rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"data/ml/rfc/$from")
     
-    val total = predictions.count
-    val opportunitiesDetected = predictions.filter(col(to) === 1).count
-    val opportunitiesReal = predictions.filter(col(from) === 1).count
-    val falsePositive = predictions.filter(col(from) === 0 && col(to) === 1).count
-    val falseNegative = predictions.filter(col(from) === 1 && col(to) === 0).count
-    val ok = predictions.filter(col(from) === 1 && col(to) === 1).count
-    val bad = predictions.filter($"P-S+5" < 0.005 && col(to) ===1).count
-    
-    val missed = opportunitiesReal - opportunitiesDetected
-    
-    val ratioDetection = 100 * opportunitiesDetected / opportunitiesReal
-    val risk = 100 * falsePositive / opportunitiesDetected
+    lazy val total = predictions.count
+    lazy val opportunitiesDetected = predictions.filter(col(to) === 1).count
+    lazy val opportunitiesReal = predictions.filter(col(from) === 1).count
+    lazy val falsePositive = predictions.filter(col(from) === 0 && col(to) === 1).count
+    lazy val falseNegative = predictions.filter(col(from) === 1 && col(to) === 0).count
+    lazy val ok = predictions.filter(col(from) === 1 && col(to) === 1).count
+    lazy val bad = predictions.filter($"P-XS+5" < 0.005 && col(to) ===1).count
+    lazy val missed = opportunitiesReal - opportunitiesDetected
+    lazy val risk = 100 * falsePositive / opportunitiesDetected
     
     println(s"""Results for prediction on $from
     Total row:$total
     Opportunities Detected & Real:$opportunitiesDetected $opportunitiesReal (${100*opportunitiesDetected/opportunitiesReal}%)
 
-    falsePositive:$falsePositive
-    falseNegative:$falseNegative
-    ok:$ok
-
-    risk:$risk%
-    bad decisions:$bad (${100 * bad/opportunitiesDetected}%)
+    risk (false positive / opportunities detected):$risk%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): ${100 * bad/opportunitiesDetected}%
     """)
   }
-  
-  val colFeatures = Array("D-L/XL-1",
-          "D-M/L-1",
-          "D-P-S-15-1",
-          "D-P-S-30-1",
-          "D-P-S-5-1",
-          "D-S/L-1",
-          "D-S/M-1",
-          "D-XS/S-1",
-          "L/XL",
-          "M/L",
-          "P-S-1",
-          "P-S-1-P-S-5",
-          "P-S-15",
-          "P-S-15-P-S-30",
-          "P-S-30",
-          "P-S-5",
-          "P-S-5-P-S-15",
-          "S/L",
-          "S/M",
-          "XS/S")
+
+  val colFeatures = Array(
+    "D-L/XL-1",
+    "D-M/L-1",
+    "D-P-XS-15-1",
+    "D-P-XS-30-1",
+    "D-P-XS-5-1",
+    "D-S/L-1",
+    "D-S/M-1",
+    "D-XS/L-1",
+    "D-XS/S-1",
+    "L/XL",
+    "M/L",
+    //"P-XS+15",
+    //"P-XS+5",
+    "P-XS-1",
+    "P-XS-1-P-XS-5",
+    "P-XS-15",
+    "P-XS-15-P-XS-30",
+    "P-XS-30",
+    "P-XS-5",
+    "P-XS-5-P-XS-15",
+    "S/L",
+    "S/M",
+    "XS/L",
+    "XS/S")
           
-    val colLabels = Array("gt1","gt2","gt3","gt4","gt5")
+    val colLabels = Array("gt1","gt2","gt3","gt4","gt5","gt6")
     def colPredicted = colLabels.map(s=>"prediction-"+s)
-  /*
-new GBTClassifier().setFeatureSubsetStrategy("auto").
-accuracy: Double = 0.894431554524362
-+--------------+-----------+--------+
-|predictedLabel|targetClass|count(1)|
-+--------------+-----------+--------+
-|           Bof|   Positive|     553|
-|           Bof|  Great !!!|      73|
-|           Bof|   Negative|     206|
-|     Great !!!|   Positive|      11|
-|     Great !!!|  Great !!!|      12|
-|     Great !!!|   Negative|       7|
-+--------------+-----------+--------+
-
-  RandomForestClassifier
-  accuracy = 0.6733966745843231
-+--------------+-----------+--------+
-|predictedLabel|targetClass|count(1)|
-+--------------+-----------+--------+
-|     Great !!!|  Great !!!|       7|
-|     Great !!!|   Negative|       4|
-|     Great !!!|   Positive|      12|
-|      Negative|  Great !!!|       6|
-|      Negative|   Negative|      60|
-|      Negative|   Positive|      29|
-|      Positive|   Positive|     500|
-|      Positive|  Great !!!|      74|
-|      Positive|   Negative|     150|
-+--------------+-----------+--------+
-
-new RandomForestClassifier().setNumTrees(50).
-accuracy: Double = 0.9025522041763341
-+--------------+-----------+--------+
-|predictedLabel|targetClass|count(1)|
-+--------------+-----------+--------+
-|           Bof|   Positive|     562|
-|           Bof|  Great !!!|      82|
-|           Bof|   Negative|     213|
-|     Great !!!|   Positive|       2|
-|     Great !!!|  Great !!!|       3|
-+--------------+-----------+--------+
-
-new LinearSVC().setMaxIter(10).setRegParam(0.1).
-+--------------+-----------+--------+
-|predictedLabel|targetClass|count(1)|
-+--------------+-----------+--------+
-|           Bof|  Great !!!|      83|
-|           Bof|   Positive|     544|
-|           Bof|   Negative|     210|
-+--------------+-----------+--------+
-   */
 }

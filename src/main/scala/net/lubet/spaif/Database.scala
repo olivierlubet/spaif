@@ -39,6 +39,10 @@ object Database {
       cache*/
   }
 
+  def indicator: DataFrame = {
+    Context.spark.table("indicator").cache
+  }
+
   def lastQuotation: DataFrame = {
     Database.quotation.groupBy("ISIN").agg(max("Date").alias("last_quotation"))
   }

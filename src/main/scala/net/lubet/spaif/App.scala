@@ -1,5 +1,7 @@
 package net.lubet.spaif
 
+import net.lubet.spaif.Indicators._
+
 
 object App extends App {
   println(
@@ -21,4 +23,5 @@ object App extends App {
   Indicators.export
   Context.spark.close
 
+  time(add(performance("S", 15)))
 }

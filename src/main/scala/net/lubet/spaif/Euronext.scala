@@ -87,7 +87,7 @@ object Euronext {
     val sdf = new SimpleDateFormat("yyyy-MM-dd")
     //https://www.euronext.com/nyx_eu_listings/price_chart/download_historical?typefile=csv&layout=vertical&typedate=dmy&separator=point&mic=XPAR&isin=FR0010478248&name=ATARI&namefile=Price_Data_Historical&from=1535328000000&to=1535932800000&adjusted=1&base=0
     val url = new URL(s"https://www.euronext.com/nyx_eu_listings/price_chart/download_historical?typefile=csv&layout=vertical&typedate=dmy&separator=point&mic=XPAR&isin=${isin}&name=${URLEncoder.encode(name, "UTF-8")}&namefile=Price_Data_Historical&from=${from}&to=${to}&adjusted=1&base=0")
-    //println(url.toString)
+    println(url.toString)
     Browser.get(url)
   }
 

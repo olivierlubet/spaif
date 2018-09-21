@@ -21,7 +21,7 @@ object Context {
     println(dataLocation+"/metastore_db")
     SparkSession
       .builder
-      .master("local")
+      .master("local[4]")
       .appName("FIC")
       .config("spark.sql.warehouse.dir", s"file://$dataLocation/warehouse")
       .config("javax.jdo.option.ConnectionURL",s"jdbc:derby:;databaseName=$dataLocation/metastore_db;create=true")
