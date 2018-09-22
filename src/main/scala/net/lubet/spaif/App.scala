@@ -1,8 +1,5 @@
 package net.lubet.spaif
 
-import net.lubet.spaif.Indicators._
-
-
 object App extends App {
   println(
     """
@@ -18,10 +15,10 @@ object App extends App {
 
   Euronext.consolidate(200)
   Indicators.compute
+  Indicators.export
   Analyst.learn
   Analyst.predict
-  Indicators.export
   Context.spark.close
 
-  time(add(performance("S", 15)))
+  //time(add(performance("S", 15)))
 }

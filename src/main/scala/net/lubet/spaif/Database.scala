@@ -17,34 +17,66 @@ object Database {
 
   def stock: DataFrame = {
     Context.spark.table("stock").cache
-
-    /*Context.spark.read.parquet("spark/stock").
-      repartition($"ISIN").
-      cache()*/
   }
 
   def quotation: DataFrame = {
     Context.spark.table("quotation").cache
-
-    /*Context.spark.read.parquet("spark/quotation").
-      repartition($"ISIN").
-      cache()*/
-    //withColumn("Day_Count", row_number().over(Window.partitionBy($"ISIN").orderBy($"Date"))).
   }
 
   def data: DataFrame = {
     Context.spark.table("data").cache
-    /*Context.spark.read.parquet("spark/data").
-      repartition($"ISIN").
-      cache*/
   }
 
   def indicator: DataFrame = {
     Context.spark.table("indicator").cache
   }
 
+  def initIndicator: DataFrame = {
+    sql(
+      """
+      DROP TABLE IF EXISTS indicator
+      """)
+
+    sql(
+      """
+      CREATE TABLE  if not exists indicator
+      (isin string, type string, date date, value double)
+      USING parquet
+      PARTITIONED BY (Type)
+      """)
+
+  }
+
+  def initWatchlist: DataFrame = {
+    sql(
+      """
+      DROP TABLE IF EXISTS watchlist
+      """)
+
+    sql(
+      """
+      CREATE TABLE  if not exists watchlist
+      (isin string)
+      USING parquet
+      """)
+  }
+
+  def insertWatchlist(isin: String): DataFrame = sql(
+    s"""
+       |insert into watchlist values ("${isin}")
+     """.stripMargin)
+
   def lastQuotation: DataFrame = {
     Database.quotation.groupBy("ISIN").agg(max("Date").alias("last_quotation"))
+  }
+
+  def alter: DataFrame = {
+    sql(
+      """
+        |ALTER TABLE indicator DROP PARTITION (isin="__HIVE_DEFAULT_PARTITION__")
+      """.stripMargin)
+
+    sql( """ALTER TABLE indicator DROP PARTITION (type = "gt9")""")
   }
 }
 

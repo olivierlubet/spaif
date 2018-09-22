@@ -23,9 +23,10 @@ object Analyst {
   import Context.spark._
   import Context._
 
-  def predict={
+  def predict = {
     sqlContext.clearCache()
-    val data = sql("""
+    val data = sql(
+      """
     select d.* from data d
     where date>date_sub(now(),10)
     --join (
@@ -42,29 +43,63 @@ object Analyst {
     val preparedData = pl.fit(data).transform(data)
 
     val models = colLabels.map(s =>
-      RandomForestClassificationModel.load("data/ml/rfc/"+s)
-      )
-    
-    val res = models.foldLeft(preparedData)((acc,model)=> {
+      RandomForestClassificationModel.load("data/ml/rfc/" + s)
+    )
+
+    val res = models.foldLeft(preparedData)((acc, model) => {
       model.transform(acc)
     })
 
-    res.createOrReplaceTempView("prediction")//.write.mode(SaveMode.Overwrite).partitionBy("isin").saveAsTable("prediction")
+    res.createOrReplaceTempView("prediction") //.write.mode(SaveMode.Overwrite).partitionBy("isin").saveAsTable("prediction")
+
+    println(sPrediction)
     sql(
-      s"""select isin,date,
-         |${colPredicted.map(s=>s"`$s`").mkString(",")},
-         |`probability-gt3`
-         |from prediction order by date desc,
-         |${colPredicted.map(s=>s"`$s` desc").mkString(",")},
-         |`probability-gt3` desc
-       """.stripMargin).show
+      s"""select p.isin, symbol, name,date,
+         |${colPredicted.map(s => s"`$s`").mkString(",")},
+         |`probability-gt1`
+         |from prediction p
+         |left join stock s on p.isin=s.isin
+         |order by date desc,
+         |${colPredicted.map(s => s"`$s` desc").mkString(",")},
+         |`probability-gt1` desc
+       """.stripMargin).show(10)
+
+    println(sWatchlist)
+    sql(
+      s"""
+        |select p.isin, symbol, name,date,
+        |${colPredicted.map(s => s"`$s`").mkString(",")},
+        |`probability-gt1`
+        |from prediction p
+        |left join stock s on p.isin=s.isin
+        |join watchlist w on s.isin=w.isin
+        |order by date desc,
+        |${colPredicted.map(s => s"`$s` desc").mkString(",")},
+        |`probability-gt1` desc
+      """.stripMargin).show(100)
+  }
+
+  def show(isin:String)= {
+    sql(
+      s"""
+        |select p.isin, symbol, name,date,
+        |${colPredicted.map(s => s"`$s`").mkString(",")},
+        |`probability-gt1`
+        |from prediction p
+        |left join stock s on p.isin=s.isin
+        |where p.isin="${isin}"
+        |order by date desc,
+        |${colPredicted.map(s => s"`$s` desc").mkString(",")},
+        |`probability-gt1` desc
+      """.stripMargin).show
   }
 
   def learn: Unit = {
-    
+
     sqlContext.clearCache()
-    
-    val data_raw = sql("""
+
+    val data_raw = sql(
+      """
     select * from data 
     --where isin in ("FR0000045072","FR0000130809","FR0000120172","FR0000054470","FR0000031122","FR0000120404")
     --where isin in (
@@ -72,15 +107,15 @@ object Analyst {
     --)
     """).cache()
 
-    colLabels.foreach(buildModel(_,data_raw))
+    colLabels.foreach(buildModel(_, data_raw))
   }
 
-  def buildModel(from:String, data_raw:DataFrame) = {
-    val to = "prediction-"+from
-    
+  def buildModel(from: String, data_raw: DataFrame) = {
+    val to = "prediction-" + from
+
     println(s"Build model for $from")
-    
-    val pertinentData=data_raw.select(from, colFeatures: _*).na.drop
+
+    val pertinentData = data_raw.select(from, colFeatures: _*).na.drop
     val Array(trainingData, testData) = pertinentData.randomSplit(Array(0.08, 0.02))
 
     val pl = new Pipeline().
@@ -91,16 +126,16 @@ object Analyst {
           ).
           setOutputCol("features")
       ))
-      
+
     val rfc = new RandomForestClassifier().setNumTrees(50).
-          setLabelCol(from).
-          setFeaturesCol("features").
-          setPredictionCol(to).
-          setRawPredictionCol("rawPrediction-"+from).
-          setProbabilityCol("probability-"+from)
-          
+      setLabelCol(from).
+      setFeaturesCol("features").
+      setPredictionCol(to).
+      setRawPredictionCol("rawPrediction-" + from).
+      setProbabilityCol("probability-" + from)
+
     val model = rfc.fit(pl.fit(trainingData).transform(trainingData))
-          
+
     val predictions = model.transform(pl.fit(testData).transform(testData))
 
     val evaluator = new MulticlassClassificationEvaluator().
@@ -110,26 +145,27 @@ object Analyst {
     val accuracy = evaluator.evaluate(predictions)
     println(s"Test Error = ${1.0 - accuracy}")
 
-    predictions.groupBy(to,from).agg(count("*")).orderBy(desc(to)).show
+    predictions.groupBy(to, from).agg(count("*")).orderBy(desc(to)).show
 
     rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"data/ml/rfc/$from")
-    
+
     lazy val total = predictions.count
     lazy val opportunitiesDetected = predictions.filter(col(to) === 1).count
     lazy val opportunitiesReal = predictions.filter(col(from) === 1).count
     lazy val falsePositive = predictions.filter(col(from) === 0 && col(to) === 1).count
     lazy val falseNegative = predictions.filter(col(from) === 1 && col(to) === 0).count
     lazy val ok = predictions.filter(col(from) === 1 && col(to) === 1).count
-    lazy val bad = predictions.filter($"P-XS+5" < 0.005 && col(to) ===1).count
+    lazy val bad = predictions.filter($"P-XS+5" < 0.005 && col(to) === 1).count
     lazy val missed = opportunitiesReal - opportunitiesDetected
     lazy val risk = 100 * falsePositive / opportunitiesDetected
-    
-    println(s"""Results for prediction on $from
+
+    println(
+      s"""Results for prediction on $from
     Total row:$total
-    Opportunities Detected & Real:$opportunitiesDetected $opportunitiesReal (${100*opportunitiesDetected/opportunitiesReal}%)
+    Opportunities Detected & Real:$opportunitiesDetected $opportunitiesReal (${100 * opportunitiesDetected / opportunitiesReal}%)
 
     risk (false positive / opportunities detected):$risk%
-    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): ${100 * bad/opportunitiesDetected}%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): ${100 * bad / opportunitiesDetected}%
     """)
   }
 
@@ -158,7 +194,31 @@ object Analyst {
     "S/M",
     "XS/L",
     "XS/S")
-          
-    val colLabels = Array("gt1","gt2","gt3","gt4","gt5","gt6")
-    def colPredicted = colLabels.map(s=>"prediction-"+s)
+
+  val colLabels = Array("gt1", "gt2", "gt3", "gt4", "gt5", "gt6")
+  lazy val colPredicted = colLabels.map(s => "prediction-" + s)
+
+  lazy val sPrediction =
+    """
+      |____________ ___________ _____ _____ _____ _____ _____ _   _  _____
+      || ___ \ ___ \  ___|  _  \_   _/  __ \_   _|_   _|  _  | \ | |/  ___|
+      || |_/ / |_/ / |__ | | | | | | | /  \/ | |   | | | | | |  \| |\ `--.
+      ||  __/|    /|  __|| | | | | | | |     | |   | | | | | | . ` | `--. \
+      || |   | |\ \| |___| |/ / _| |_| \__/\ | |  _| |_\ \_/ / |\  |/\__/ /
+      |\_|   \_| \_\____/|___/  \___/ \____/ \_/  \___/ \___/\_| \_/\____/
+      |
+      |
+    """.stripMargin
+
+  lazy val sWatchlist =
+    """
+      | _    _  ___ _____ _____  _   _   _     _____ _____ _____
+      || |  | |/ _ \_   _/  __ \| | | | | |   |_   _/  ___|_   _|
+      || |  | / /_\ \| | | /  \/| |_| | | |     | | \ `--.  | |
+      || |/\| |  _  || | | |    |  _  | | |     | |  `--. \ | |
+      |\  /\  / | | || | | \__/\| | | | | |_____| |_/\__/ / | |
+      | \/  \/\_| |_/\_/  \____/\_| |_/ \_____/\___/\____/  \_/
+      |
+      |
+    """.stripMargin
 }

@@ -14,10 +14,9 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.DataFrame
 import Context.spark.implicits._
 import org.apache.spark.sql.expressions.Window
-
-
 import java.text.DateFormat
 import java.text.SimpleDateFormat
+import java.util.Calendar
 
 object Euronext {
   def dlList(): String = {
@@ -114,32 +113,32 @@ object Euronext {
       csv(ds)
   }
 
-  def consolidate(nb_stock: Integer = 2): Unit = {
-    Context.spark.catalog.clearCache()
+  def loadStock(isin: String, toTS: Timestamp, from: Date): List[String] = {
+    try {
+      val formatter = new SimpleDateFormat("yyyy-MM-dd")
+      val to = new Date(formatter.parse(formatter.format(toTS)).getTime)
 
-    def loadStock(isin: String, toTS: Timestamp, from: Date): List[String] = {
-      try {
-        val formatter = new SimpleDateFormat("yyyy-MM-dd")
-        val to = new Date(formatter.parse(formatter.format(toTS)).getTime)
+      if (to.getTime > from.getTime) {
+        println(s"Working for $isin from $from to $to (${from.getTime} , ${to.getTime})")
 
-        if (to.getTime > from.getTime) {
-          println(s"Working for $isin from $from to $to (${from.getTime} , ${to.getTime})")
-
-          //Euronext.refreshStock(isin, Option(from), Option(to))
-          //Source.fromFile(s"spark/s/${isin}.csv").getLines.toList.drop(4)
-          Euronext.dlStock(isin, Option(from), Option(to)).split('\n').toList.drop(4)
-        } else {
-          println(s"$isin already up to date")
-          List.empty
-        }
-      }
-      catch {
-        case e: Throwable =>
-          println(s"Error for $isin")
-          println(e.toString)
-          List.empty
+        //Euronext.refreshStock(isin, Option(from), Option(to))
+        //Source.fromFile(s"spark/s/${isin}.csv").getLines.toList.drop(4)
+        Euronext.dlStock(isin, Option(from), Option(to)).split('\n').toList.drop(4)
+      } else {
+        println(s"$isin already up to date")
+        List.empty
       }
     }
+    catch {
+      case e: Throwable =>
+        println(s"Error for $isin")
+        println(e.toString)
+        List.empty
+    }
+  }
+
+  def consolidate(nb_stock: Integer = 0): Unit = {
+    Context.spark.catalog.clearCache()
 
     val list = Euronext.getList().orderBy(desc("Turnover")).select($"ISIN", $"Last_DateTime".alias("to")).limit(nb_stock).repartition($"ISIN").cache() //.limit(20)
     list.show()
@@ -147,13 +146,16 @@ object Euronext {
     // Gérer la non existence de la table
     val ds = if (Context.spark.catalog.tableExists("quotation")) {
       val lq = Database.lastQuotation
-      val delta = list.join(lq, list("ISIN") === lq("ISIN"), "left").drop(lq("ISIN")).withColumnRenamed("last_quotation", "from")
+      val delta = list.join(lq, list("ISIN") === lq("ISIN"), "left").drop(lq("ISIN")).withColumnRenamed("last_quotation", "from").
+        union(lq.join(list,list("ISIN") === lq("ISIN"),"leftanti").drop(list("ISIN")).withColumnRenamed("last_quotation","from").select($"isin",lit(null).alias("to"),$"from"))
 
       delta.flatMap {
         case Row(isin: String, toTS: Timestamp, from: Date) =>
           loadStock(isin, new Timestamp(toTS.getTime+ 24*60*60*1000), from) //new Timestamp(24*60*60*1000)
         case Row(isin: String, toTS: Timestamp, null) =>
           loadStock(isin, toTS, new Date(946681200000l))
+        case Row(isin: String, null, from: Date) =>
+          loadStock(isin, new Timestamp(Calendar.getInstance().getTime.getTime) , from)
       }
     }
     else {

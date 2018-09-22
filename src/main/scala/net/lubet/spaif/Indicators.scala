@@ -23,34 +23,13 @@ object Indicators {
     result
   }
 
-  def init = {
-    sql(
-      """
-      DROP TABLE IF EXISTS indicator
-      """)
 
-    sql(
-      """
-      CREATE TABLE  if not exists indicator
-      (isin string, type string, date date, value double)
-      USING parquet
-      PARTITIONED BY (Type)
-      """)
-  }
-
-  def alter = {
-    sql(
-      """
-        |ALTER TABLE indicator DROP PARTITION (isin="__HIVE_DEFAULT_PARTITION__")
-      """.stripMargin)
-
-    sql( """ALTER TABLE indicator DROP PARTITION (type = "gt9")""")
-  }
 
   def compute = {
 
     sqlContext.clearCache()
-    init
+
+    Database.initIndicator
 
     process(closeIndic)
     process(
@@ -99,8 +78,8 @@ object Indicators {
 
     process(
       classification(),
-      classificationBinGt("P-XS+5", 5),
-      classificationBinGt("P-XS+5", 4),
+      classificationBinGt("P-XS+15", 5),
+      classificationBinGt("P-XS+15", 4),
       classificationBinGt("P-XS+5", 3),
       classificationBinGt("P-XS+5", 2),
       classificationBinGt("P-XS+5", 1),
@@ -112,7 +91,9 @@ object Indicators {
   }
 
   def process(first: DataFrame, set: DataFrame*) = {
-    time(add(set.foldLeft(first)((acc: DataFrame, ds: DataFrame) => {acc.union(ds)})))
+    time(add(set.foldLeft(first)((acc: DataFrame, ds: DataFrame) => {
+      acc.union(ds)
+    })))
   }
 
   def export = {
