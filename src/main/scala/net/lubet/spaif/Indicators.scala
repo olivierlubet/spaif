@@ -78,13 +78,13 @@ object Indicators {
 
     process(
       classification(),
+      classificationBinGt("P-XS+15", 6),
       classificationBinGt("P-XS+15", 5),
       classificationBinGt("P-XS+15", 4),
       classificationBinGt("P-XS+5", 3),
       classificationBinGt("P-XS+5", 2),
-      classificationBinGt("P-XS+5", 1),
+      classificationBinGt("P-XS+5", 1)
 
-      classificationBinGt("P-XS+15", 6)
     )
 
     stats
@@ -155,7 +155,7 @@ object Indicators {
          |date,
          |${if (delay < 0) "val1/val2-1" else "val2/val1-1"} value,
          |"P-$indicatorType${if (delay < 0) "" else "+"}$delay" type
-         |         |from (
+         |from (
          |select isin,date, value as val1,
          |LAG(value,${-delay}) OVER (PARTITION BY i.isin ORDER BY i.date ASC) AS val2
          |from indicator i
@@ -257,19 +257,7 @@ object Indicators {
   }
 
   def add(df: DataFrame) = {
-
-    //if (df.head(1).nonEmpty) {
-
-    //val index = df.head.fieldIndex("type")
-    //val indicatorType = df.head.getString(index)
-
-    //val ref = maxDates.filter($"type" === indicatorType)
-    //val adding = df.join(ref, ref("isin") === df("isin"), "left").filter(df("date") > ref("date") || ref("date").isNull).select(df("isin"),df("date"),df("value"),df("type"))
-    //val adding = df.join(ref, ref("isin") === df("isin"), "left").filter(df("date") > ref("date") || ref("date").isNull).select(df("isin"), df("date"), df("value"), df("type"))
-
-    //println(s"Adding rows for $indicatorType") //${adding.count} //
     df.write.mode(SaveMode.Append).partitionBy("type").saveAsTable("indicator")
-    //println(s"Adding ${df.count} rows")
   }
 
   lazy val maxDates = sql(s"""select isin, type, max(date) date from indicator group by isin,type""").persist(StorageLevel.MEMORY_ONLY)

@@ -124,11 +124,13 @@ object Analyst {
           setInputCols(
             colFeatures
           ).
-          setOutputCol("features")
+          setOutputCol("features"),
+        new MinMaxScaler().setInputCol("features").setOutputCol("scaledFeatures")//,
+        //new LinearPrecisionReducer().setInputCol("scaledFeatures").setOutputCol("reducedFeatures")
       ))
 
     val rfc = new RandomForestClassifier().setNumTrees(50).
-      setLabelCol(from).
+    setLabelCol(from).
       setFeaturesCol("features").
       setPredictionCol(to).
       setRawPredictionCol("rawPrediction-" + from).
@@ -136,6 +138,17 @@ object Analyst {
 
     val model = rfc.fit(pl.fit(trainingData).transform(trainingData))
 
+/*
+    val nb = new NaiveBayes().
+      setSmoothing(0.9).
+      setLabelCol(from).
+      setFeaturesCol("reducedFeatures").
+      setPredictionCol(to).
+      setRawPredictionCol("rawPrediction-" + from).
+      setProbabilityCol("probability-" + from)
+
+    val model = nb.fit(pl.fit(pertinentData).transform(trainingData))
+*/
     val predictions = model.transform(pl.fit(testData).transform(testData))
 
     val evaluator = new MulticlassClassificationEvaluator().
@@ -147,7 +160,7 @@ object Analyst {
 
     predictions.groupBy(to, from).agg(count("*")).orderBy(desc(to)).show
 
-    rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"data/ml/rfc/$from")
+    //rfc.fit(pl.fit(pertinentData).transform(pertinentData)).write.overwrite().save(s"data/ml/rfc/$from")
 
     lazy val total = predictions.count
     lazy val opportunitiesDetected = predictions.filter(col(to) === 1).count
@@ -200,25 +213,137 @@ object Analyst {
 
   lazy val sPrediction =
     """
-      |____________ ___________ _____ _____ _____ _____ _____ _   _  _____
-      || ___ \ ___ \  ___|  _  \_   _/  __ \_   _|_   _|  _  | \ | |/  ___|
-      || |_/ / |_/ / |__ | | | | | | | /  \/ | |   | | | | | |  \| |\ `--.
-      ||  __/|    /|  __|| | | | | | | |     | |   | | | | | | . ` | `--. \
-      || |   | |\ \| |___| |/ / _| |_| \__/\ | |  _| |_\ \_/ / |\  |/\__/ /
-      |\_|   \_| \_\____/|___/  \___/ \____/ \_/  \___/ \___/\_| \_/\____/
+      | ____________ ___________ _____ _____ _____ _____ _____ _   _  _____
+      | | ___ \ ___ \  ___|  _  \_   _/  __ \_   _|_   _|  _  | \ | |/  ___|
+      | | |_/ / |_/ / |__ | | | | | | | /  \/ | |   | | | | | |  \| |\ `--.
+      | |  __/|    /|  __|| | | | | | | |     | |   | | | | | | . ` | `--. \
+      | | |   | |\ \| |___| |/ / _| |_| \__/\ | |  _| |_\ \_/ / |\  |/\__/ /
+      | \_|   \_| \_\____/|___/  \___/ \____/ \_/  \___/ \___/\_| \_/\____/
       |
       |
     """.stripMargin
 
   lazy val sWatchlist =
     """
-      | _    _  ___ _____ _____  _   _   _     _____ _____ _____
-      || |  | |/ _ \_   _/  __ \| | | | | |   |_   _/  ___|_   _|
-      || |  | / /_\ \| | | /  \/| |_| | | |     | | \ `--.  | |
-      || |/\| |  _  || | | |    |  _  | | |     | |  `--. \ | |
-      |\  /\  / | | || | | \__/\| | | | | |_____| |_/\__/ / | |
-      | \/  \/\_| |_/\_/  \____/\_| |_/ \_____/\___/\____/  \_/
+      |  _    _  ___ _____ _____  _   _   _     _____ _____ _____
+      | | |  | |/ _ \_   _/  __ \| | | | | |   |_   _/  ___|_   _|
+      | | |  | / /_\ \| | | /  \/| |_| | | |     | | \ `--.  | |
+      | | |/\| |  _  || | | |    |  _  | | |     | |  `--. \ | |
+      | \  /\  / | | || | | \__/\| | | | | |_____| |_/\__/ / | |
+      |  \/  \/\_| |_/\_/  \____/\_| |_/ \_____/\___/\____/  \_/
       |
       |
     """.stripMargin
 }
+
+/*
+
+Random Forest Classifier
+Build model for gt1
+Test Error = 0.36573729094220897
++--------------+---+--------+
+|prediction-gt1|gt1|count(1)|
++--------------+---+--------+
+|           1.0|1.0|    7723|
+|           1.0|0.0|    5479|
+|           0.0|1.0|   29860|
+|           0.0|0.0|   53562|
++--------------+---+--------+
+
+Results for prediction on gt1
+    Total row:96624
+    Opportunities Detected & Real:13202 37583 (35%)
+
+    risk (false positive / opportunities detected):41%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): 36%
+
+Build model for gt2
+Test Error = 0.2704249639024796
++--------------+---+--------+
+|prediction-gt2|gt2|count(1)|
++--------------+---+--------+
+|           1.0|0.0|    1138|
+|           1.0|1.0|    1669|
+|           0.0|1.0|   24895|
+|           0.0|0.0|   68565|
++--------------+---+--------+
+
+Results for prediction on gt2
+    Total row:96267
+    Opportunities Detected & Real:2807 26564 (10%)
+
+    risk (false positive / opportunities detected):40%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): 29%
+
+Build model for gt3
+Test Error = 0.19346159439862043
++--------------+---+--------+
+|prediction-gt3|gt3|count(1)|
++--------------+---+--------+
+|           1.0|0.0|     266|
+|           1.0|1.0|     403|
+|           0.0|1.0|   18357|
+|           0.0|0.0|   77236|
++--------------+---+--------+
+
+Results for prediction on gt3
+    Total row:96262
+    Opportunities Detected & Real:669 18760 (3%)
+
+    risk (false positive / opportunities detected):39%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): 26%
+
+Build model for gt4
+Test Error = 0.27900079844872816
++--------------+---+--------+
+|prediction-gt4|gt4|count(1)|
++--------------+---+--------+
+|           1.0|1.0|     197|
+|           1.0|0.0|     150|
+|           0.0|1.0|   26756|
+|           0.0|0.0|   69334|
++--------------+---+--------+
+
+Results for prediction on gt4
+    Total row:96437
+    Opportunities Detected & Real:347 26953 (1%)
+
+    risk (false positive / opportunities detected):43%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): 26%
+
+Build model for gt5
+Test Error = 0.2342585200468641
++--------------+---+--------+
+|prediction-gt5|gt5|count(1)|
++--------------+---+--------+
+|           1.0|1.0|      12|
+|           1.0|0.0|       9|
+|           0.0|1.0|   22585|
+|           0.0|0.0|   73843|
++--------------+---+--------+
+
+Results for prediction on gt5
+    Total row:96449
+    Opportunities Detected & Real:21 22597 (0%)
+
+    risk (false positive / opportunities detected):42%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): 14%
+
+Build model for gt6
+Test Error = 0.18942808882809503
++--------------+---+--------+
+|prediction-gt6|gt6|count(1)|
++--------------+---+--------+
+|           1.0|0.0|       3|
+|           0.0|1.0|   18277|
+|           0.0|0.0|   78221|
++--------------+---+--------+
+
+Results for prediction on gt6
+    Total row:96501
+    Opportunities Detected & Real:3 18277 (0%)
+
+    risk (false positive / opportunities detected):100%
+    bad decisions (predicted positive but in fact < 0.005 / opportunities detected): 66%
+
+ */
