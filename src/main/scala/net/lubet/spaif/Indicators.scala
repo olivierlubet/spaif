@@ -23,8 +23,6 @@ object Indicators {
     result
   }
 
-
-
   def compute = {
 
     sqlContext.clearCache()
@@ -33,14 +31,16 @@ object Indicators {
 
     process(closeIndic)
     process(
-      movingAverage("Close", "XS", 3),
-      movingAverage("Close", "S", 6),
-      movingAverage("Close", "M", 12),
-      movingAverage("Close", "L", 30),
-      movingAverage("Close", "XL", 90)
+      movingAveragePlus("Close", "XS", 3),
+      movingAveragePlus("Close", "S", 6),
+      movingAveragePlus("Close", "M", 12),
+      movingAveragePlus("Close", "L", 30),
+      movingAveragePlus("Close", "XL", 90),
+      movingAveragePlus("Close", "XXL", 200)
     )
 
     process(
+      performance("XS", 30),
       performance("XS", 15),
       performance("XS", 5),
       performance("XS", -1),
@@ -50,6 +50,7 @@ object Indicators {
     )
 
     process(
+      derivative("Close", -1),
       derivative("P-XS-5", -1),
       derivative("P-XS-15", -1),
       derivative("P-XS-30", -1),
@@ -65,8 +66,10 @@ object Indicators {
       rate("S", "L"),
       rate("S", "M"),
       rate("M", "L"),
-      rate("L", "XL")
+      rate("L", "XL"),
+      rate("XL", "XXL")
     )
+
     process(
       derivative("XS/S", -1),
       derivative("XS/L", -1),
@@ -81,9 +84,9 @@ object Indicators {
       classificationBinGt("P-XS+15", 6),
       classificationBinGt("P-XS+15", 5),
       classificationBinGt("P-XS+15", 4),
-      classificationBinGt("P-XS+5", 3),
-      classificationBinGt("P-XS+5", 2),
-      classificationBinGt("P-XS+5", 1)
+      classificationBinGt("P-XS+15", 3),
+      classificationBinGt("P-XS+15", 2),
+      classificationBinGt("P-XS+15", 1)
 
     )
 
@@ -125,7 +128,7 @@ object Indicators {
         |"Class" type
         |--, value as test
         |from indicator
-        | where type="P-S+5"
+        | where type="P-XS+15"
       """.stripMargin)
   }
 
@@ -229,9 +232,25 @@ object Indicators {
     )
   }
 
+  def movingAveragePlus(from: String, to: String, delay: Integer): DataFrame = {
+    assert(delay >= 1)
+    sql(
+      s"""
+         |SELECT i.isin,i.date,
+         |(AVG(i.value) OVER (PARTITION BY i.isin ORDER BY i.date ASC ROWS ${delay - 1} PRECEDING)) * ${delay - 1} / ${delay} +
+         | i.value / ${delay}
+         | AS value,
+         |"$to" as type
+         |FROM   indicator i
+         |where i.type="$from"
+         |-- and i.date < "2010-01-01" -- uncomment for tests
+      """.stripMargin
+    )
+  }
+
   lazy val closeIndic = sql(
     """
-      |select q.isin,q.date, q.Open value,
+      |select q.isin,q.date, q.Close value,
       |"Close" type
       |from quotation q
       |--where q.isin in ("FR0000045072","FR0000130809")

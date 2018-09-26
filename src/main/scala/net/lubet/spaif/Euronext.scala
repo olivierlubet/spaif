@@ -155,7 +155,7 @@ object Euronext {
         case Row(isin: String, toTS: Timestamp, null) =>
           loadStock(isin, toTS, new Date(946681200000l))
         case Row(isin: String, null, from: Date) =>
-          loadStock(isin, new Timestamp(Calendar.getInstance().getTime.getTime) , from)
+          loadStock(isin, new Timestamp(Calendar.getInstance().getTime.getTime + 24*60*60*1000) , from)
       }
     }
     else {
@@ -165,6 +165,7 @@ object Euronext {
     }
 
     //"ISIN","MIC","Date","Open","High","Low","Close","Number of Shares","Number of Trades","Turnover","Currency"
+    //ISIN,"MIC","Date","Ouvert","Haut","Bas","Fermer","Nombre de titres","Number of Trades","Capitaux","Devise"
     val schema = StructType(Array(
       StructField("ISIN", StringType, false),
       StructField("MIC", StringType, false),

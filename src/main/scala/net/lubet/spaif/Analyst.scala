@@ -62,7 +62,16 @@ object Analyst {
          |order by date desc,
          |${colPredicted.map(s => s"`$s` desc").mkString(",")},
          |`probability-gt1` desc
-       """.stripMargin).show(10)
+       """.stripMargin).show(6)
+
+    sql(
+      s"""select p.isin, symbol, name,date,
+         |`prediction-gt1`,`D-Close-1`
+         |from prediction p
+         |left join stock s on p.isin=s.isin
+         |where `prediction-gt1`=1
+         |order by date desc,`D-Close-1`
+       """.stripMargin).show(6)
 
     println(sWatchlist)
     sql(
@@ -82,7 +91,7 @@ object Analyst {
   def show(isin:String)= {
     sql(
       s"""
-        |select p.isin, symbol, name,date,
+        |select p.isin, symbol, name,date,Close,`D-Close-1` as DClose,
         |${colPredicted.map(s => s"`$s`").mkString(",")},
         |`probability-gt1`
         |from prediction p
