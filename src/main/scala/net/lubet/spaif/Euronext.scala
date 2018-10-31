@@ -113,7 +113,7 @@ object Euronext {
       csv(ds)
   }
 
-  def loadStock(isin: String, toTS: Timestamp, from: Date): List[String] = {
+  def loadStock(isin: String, toTS: Timestamp, from: Date, tryCount:Integer =5): List[String] = {
     try {
       val formatter = new SimpleDateFormat("yyyy-MM-dd")
       val to = new Date(formatter.parse(formatter.format(toTS)).getTime)
@@ -133,7 +133,8 @@ object Euronext {
       case e: Throwable =>
         println(s"Error for $isin")
         println(e.toString)
-        List.empty
+        if (tryCount <= 0)List.empty
+        else loadStock(isin, toTS, from, tryCount-1)
     }
   }
 
@@ -146,8 +147,12 @@ object Euronext {
     // Gérer la non existence de la table
     val ds = if (Context.spark.catalog.tableExists("quotation")) {
       val lq = Database.lastQuotation
-      val delta = list.join(lq, list("ISIN") === lq("ISIN"), "left").drop(lq("ISIN")).withColumnRenamed("last_quotation", "from").
-        union(lq.join(list,list("ISIN") === lq("ISIN"),"leftanti").drop(list("ISIN")).withColumnRenamed("last_quotation","from").select($"isin",lit(null).alias("to"),$"from"))
+      val delta = list.
+        join(lq, list("ISIN") === lq("ISIN"), "left").
+        drop(lq("ISIN")).withColumnRenamed("last_quotation", "from").
+        union(lq.join(list,list("ISIN") === lq("ISIN"),"leftanti").
+          drop(list("ISIN")).withColumnRenamed("last_quotation","from").
+          select($"isin",lit(null).alias("to"),$"from"))
 
       delta.flatMap {
         case Row(isin: String, toTS: Timestamp, from: Date) =>

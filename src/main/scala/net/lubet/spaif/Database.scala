@@ -1,11 +1,13 @@
 package net.lubet.spaif
 
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, SaveMode}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.expressions.Window
-
 import Context.spark._
 import Context.spark.implicits._
+import net.lubet.spaif.Analyst.colPredicted
+import net.lubet.spaif.Indicators.pivot
+import org.apache.hadoop.fs.{FileSystem, Path}
 
 object Database {
 
@@ -61,6 +63,10 @@ object Database {
       """)
   }
 
+  def watchlist: DataFrame = {
+    Context.spark.table("watchlist").cache
+  }
+
   def insertWatchlist(isin: String): DataFrame = sql(
     s"""
        |insert into watchlist values ("${isin}")
@@ -77,6 +83,21 @@ object Database {
       """.stripMargin)
 
     sql( """ALTER TABLE indicator DROP PARTITION (type = "gt9")""")
+  }
+
+  def export ={
+    def write(name:String , df : DataFrame)={
+      println(s"Writing $name")
+      df.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("data/export")
+      val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
+      val dataFilePath = fs.globStatus(new Path("data/export/part*"))(0).getPath
+      fs.rename(dataFilePath, new Path(s"$name.csv"))
+    }
+
+    write("data",sql("select * from data"))
+    write("prediction",sql(s"select isin,date,kmeans, ${colPredicted.map(s=>s"`$s`").mkString(",")} from prediction"))
+    write("watchlist",sql(s"select * from watchlist"))
+
   }
 }
 

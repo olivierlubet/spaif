@@ -2,11 +2,8 @@ package net.lubet.spaif
 
 //import net.lubet.spaif._
 
-import net.lubet.spaif.Indicators.classificationBinGt
 import org.apache.spark.sql._
-import org.apache.spark.sql.types._
 import org.apache.spark.sql.functions._
-import org.apache.hadoop.fs._
 import org.apache.spark.storage.StorageLevel
 
 object Indicators {
@@ -29,17 +26,27 @@ object Indicators {
 
     Database.initIndicator
 
-    process(closeIndic)
+    process(closeIndic, openIndic, lowIndic, highIndic)
     process(
       movingAveragePlus("Close", "XS", 3),
       movingAveragePlus("Close", "S", 6),
       movingAveragePlus("Close", "M", 12),
       movingAveragePlus("Close", "L", 30),
       movingAveragePlus("Close", "XL", 90),
-      movingAveragePlus("Close", "XXL", 200)
+      movingAveragePlus("Close", "XXL", 200),
+
+      movingAveragePlus("Open", "XS-O", 3),
+      movingAveragePlus("High", "XS-H", 3),
+      movingAveragePlus("Low", "XS-L", 3)
     )
 
     process(
+      stdDeviation("Close", 10),
+      stdDeviation("XS", 10),
+      stdDeviation("M", 10),
+      performance("Close", -1),
+      performance("Close", +1),
+      performance("Close", +5),
       performance("XS", 30),
       performance("XS", 15),
       performance("XS", 5),
@@ -50,7 +57,10 @@ object Indicators {
     )
 
     process(
-      derivative("Close", -1),
+      bollinger("Close", "STDDEV-Close-10"),
+      bollinger("XS", "STDDEV-XS-10"),
+      bollinger("M", "STDDEV-M-10"),
+
       derivative("P-XS-5", -1),
       derivative("P-XS-15", -1),
       derivative("P-XS-30", -1),
@@ -61,6 +71,19 @@ object Indicators {
     )
 
     process(
+      rate("Close", "BOL-H-Close"),
+      rate("Close", "BOL-L-Close"),
+      rate("XS", "BOL-H-XS"),
+      rate("XS", "BOL-L-XS"),
+      rate("M", "BOL-H-M"),
+      rate("M", "BOL-L-M"),
+
+      rate("Close", "Open"),
+      rate("High", "Low"),
+      rate("XS", "XS-O"),
+      rate("XS", "XS-H"),
+      rate("XS", "XS-L"),
+
       rate("XS", "S"),
       rate("XS", "L"),
       rate("S", "L"),
@@ -71,6 +94,9 @@ object Indicators {
     )
 
     process(
+      derivative("XS/XS-O", -1),
+      derivative("XS/XS-H", -1),
+      derivative("XS/XS-L", -1),
       derivative("XS/S", -1),
       derivative("XS/L", -1),
       derivative("S/M", -1),
@@ -81,38 +107,21 @@ object Indicators {
 
     process(
       classification(),
-      classificationBinGt("P-XS+15", 6),
-      classificationBinGt("P-XS+15", 5),
-      classificationBinGt("P-XS+15", 4),
-      classificationBinGt("P-XS+15", 3),
-      classificationBinGt("P-XS+15", 2),
-      classificationBinGt("P-XS+15", 1)
+      classificationBinGt("P-Close+5", 3),
+      classificationBinGt("P-Close+5", 2),
+      classificationBinGt("P-Close+5", 1)
 
     )
 
     stats
+
+    pivot().write.mode(SaveMode.Overwrite).saveAsTable("data")
   }
 
   def process(first: DataFrame, set: DataFrame*) = {
     time(add(set.foldLeft(first)((acc: DataFrame, ds: DataFrame) => {
       acc.union(ds)
     })))
-  }
-
-  def export = {
-    time({
-      println("write table data")
-      sqlContext.clearCache()
-      val data = pivot().cache()
-      data.write.mode(SaveMode.Overwrite).saveAsTable("data")
-      data.coalesce(1).write.option("header", true).mode(SaveMode.Overwrite).format("com.databricks.spark.csv").save("data/stock_value.csv")
-
-      //data.schema.fields.foreach(f=>println(s""""${f.name}","""))
-
-      val fs = FileSystem.get(Context.spark.sparkContext.hadoopConfiguration)
-      val filePath = fs.globStatus(new Path("data/stock_value.csv/part*"))(0).getPath
-      fs.rename(filePath, new Path("data.csv"))
-    })
   }
 
   def classification(): DataFrame = {
@@ -143,6 +152,39 @@ object Indicators {
          |from indicator
          | where type="$from"
     """.stripMargin)
+  }
+
+  def bollinger(from: String, stddev: String): DataFrame = {
+    sql(
+      s"""
+         |SELECT i.isin,i.date,
+         |i.value+i2.value*2 as value,
+         |"BOL-H-${from}" as type
+         |FROM indicator i
+         |JOIN indicator i2 on i2.type="${stddev}" and i.isin=i2.isin and i.date=i2.date
+         |WHERE i.type="${from}"
+         |
+         |UNION
+         |
+         |SELECT i.isin,i.date,
+         |i.value-i2.value*2 as value,
+         |"BOL-L-${from}" as type
+         |FROM indicator i
+         |JOIN indicator i2 on i2.type="${stddev}" and i.isin=i2.isin and i.date=i2.date
+         |WHERE i.type="${from}"
+      """.stripMargin)
+  }
+
+  def stdDeviation(from: String, delay: Integer): DataFrame = {
+    sql(
+      s"""
+         |SELECT i.isin,i.date,
+         |STDDEV(i.value)
+         |OVER (PARTITION BY i.isin ORDER BY i.date ASC ROWS ${delay} PRECEDING) AS value,
+         |"STDDEV-${from}-${delay}" as type
+         |FROM   indicator i
+         |where i.type="$from"
+      """.stripMargin)
   }
 
   /**
@@ -248,15 +290,10 @@ object Indicators {
     )
   }
 
-  lazy val closeIndic = sql(
-    """
-      |select q.isin,q.date, q.Close value,
-      |"Close" type
-      |from quotation q
-      |--where q.isin in ("FR0000045072","FR0000130809")
-      |--and q.date<"2010-01-01" -- for test
-    """.stripMargin
-  )
+  lazy val closeIndic = sql(""" select q.isin,q.date, q.Close value, "Close" type from quotation q """)
+  lazy val openIndic = sql(""" select q.isin,q.date, q.Open value, "Open" type from quotation q """)
+  lazy val lowIndic = sql(""" select q.isin,q.date, q.Low value, "Low" type from quotation q """)
+  lazy val highIndic = sql(""" select q.isin,q.date, q.High value, "High" type from quotation q """)
 
   def pivot(columnList: String*) = {
     val df = sql(

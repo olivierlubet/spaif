@@ -13,12 +13,11 @@ object App extends App {
       |
     """.stripMargin)
 
-  Euronext.consolidate(200)
+  Euronext.consolidate(100)
   Indicators.compute
-  Indicators.export
-  Analyst.learn
+  //Analyst.learn
   Analyst.predict
+  Database.export
   Context.spark.close
 
-  //time(add(performance("S", 15)))
 }
